@@ -1,6 +1,6 @@
 # Load Gen
 
-Load Gen is a small Locust-based experiment helper for paper-oriented autoscaling experiments.
+Load Gen is a small Locust-based load testing tool.
 
 The intended workflow is:
 

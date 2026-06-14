@@ -1,0 +1,51 @@
+name: onlineboutique-mixed
+locustfile: ../../../apps/onlineboutique/locustfile.py
+host: http://192.168.101.63:30677
+output_dir: output
+
+# Interval, in seconds, used to sample the ideal workload curve into csv/ideal_rps.csv.
+# This affects generated data/plots, not Locust's internal request timing.
+sample_interval_s: 1
+slo_ms: 250
+p95_window_s: 5
+
+pattern:
+  type: mixed
+  parts:
+    #- type: constant
+    #  rps: 30
+    #  duration: 5m
+    #- type: sinusoidal
+    #  baseline_rps: 185
+    #  amplitude_rps: 115
+    #  period: 10m
+    #  duration: 20m
+    #- type: exponential
+    #  start_rps: 70
+    #  end_rps: 450
+    #  curve: 3.0
+    #  duration: 5m
+    #- type: constant
+    #  rps: 70
+    #  duration: 5m
+    - type: constant
+      rps: 30
+      duration: 15m
+    #- type: sinusoidal
+    #  baseline_rps: 30
+    #  amplitude_rps: 30
+    #  period: 2m
+    #  duration: 4m
+    #- type: exponential
+    #  start_rps: 30
+    #  end_rps: 100
+    #  curve: 3.0
+    #  duration: 2m
+kubernetes:
+  enabled: true
+  namespace: default
+  # Interval, in seconds, for polling deployment replica counts with kubectl.
+  sample_interval_s: 5
+  # Optional label selector to restrict deployment replica collection.
+  selector: group=onlineboutique
+  kubeconfig: ../../../kubeconfig-ctx-cluster-01

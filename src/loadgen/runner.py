@@ -148,11 +148,46 @@ def experiment_dir(config_path: Path, cfg: dict[str, Any]) -> Path:
 
 
 def validate_config(cfg: dict[str, Any]) -> None:
-    required = ["locustfile", "host", "pattern"]
+    required = ["locustfile", "pattern"]
     missing = [name for name in required if name not in cfg]
+    if "host" not in cfg and "endpoints" not in cfg:
+        missing.append("host or endpoints")
     if missing:
         raise ValueError(f"missing required config keys: {', '.join(missing)}")
+    if "endpoints" in cfg:
+        normalize_endpoints(cfg["endpoints"], "endpoints")
+    validate_pattern_endpoints(cfg["pattern"])
     pattern_duration(cfg["pattern"])
+
+
+def normalize_endpoints(value: Any, path: str) -> list[dict[str, Any]]:
+    if not isinstance(value, list) or not value:
+        raise ValueError(f"{path} must be a non-empty list")
+    endpoints: list[dict[str, Any]] = []
+    for index, item in enumerate(value):
+        item_path = f"{path}[{index}]"
+        if isinstance(item, str):
+            url = item
+            weight = 1.0
+        elif isinstance(item, dict):
+            url = item.get("url") or item.get("host")
+            weight = float(item.get("weight", 1.0))
+        else:
+            raise ValueError(f"{item_path} must be a URL string or object")
+        if not url or not isinstance(url, str):
+            raise ValueError(f"{item_path}.url is required")
+        if weight <= 0:
+            raise ValueError(f"{item_path}.weight must be greater than 0")
+        endpoints.append({"url": url.rstrip("/"), "weight": weight})
+    return endpoints
+
+
+def validate_pattern_endpoints(pattern: dict[str, Any], path: str = "pattern") -> None:
+    if "endpoints" in pattern:
+        normalize_endpoints(pattern["endpoints"], f"{path}.endpoints")
+    if pattern.get("type") == "mixed":
+        for index, part in enumerate(pattern.get("parts", [])):
+            validate_pattern_endpoints(part, f"{path}.parts[{index}]")
 
 
 def resolve_path(value: str | Path, base_dir: Path) -> Path:
@@ -186,6 +221,9 @@ def maybe_start_sampler(cfg: dict[str, Any], csv_dir: Path, config_dir: Path) ->
 
 def run_locust(cfg: dict[str, Any], wrapper: Path, locust_dir: Path) -> int:
     pattern = cfg["pattern"]
+    endpoint_config = cfg["endpoints"] if "endpoints" in cfg else [cfg["host"]]
+    endpoints = normalize_endpoints(endpoint_config, "endpoints")
+    locust_host = cfg.get("host") or endpoints[0]["url"]
     max_users = max(1, int(math.ceil(float(cfg.get("max_users", max_rps(pattern))))))
     spawn_rate = float(cfg.get("spawn_rate", min(max_users, 100)))
     run_time = format_duration(pattern_duration(pattern))
@@ -197,7 +235,7 @@ def run_locust(cfg: dict[str, Any], wrapper: Path, locust_dir: Path) -> int:
         str(wrapper),
         "--headless",
         "--host",
-        str(cfg["host"]),
+        str(locust_host),
         "--run-time",
         run_time,
         "--csv",
@@ -215,6 +253,7 @@ def run_locust(cfg: dict[str, Any], wrapper: Path, locust_dir: Path) -> int:
 
     env = os.environ.copy()
     env["LOADGEN_PATTERN_JSON"] = json.dumps(pattern)
+    env["LOADGEN_ENDPOINTS_JSON"] = json.dumps(endpoints)
     env["LOADGEN_SPAWN_RATE"] = str(spawn_rate)
 
     log_path = locust_dir / "locust.log"

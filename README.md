@@ -160,7 +160,8 @@ Required keys:
 | Key | Description |
 |-----|-------------|
 | `locustfile` | Path to the application Locust file, relative to the config file |
-| `host` | Application base URL passed to Locust |
+| `host` | Application base URL passed to Locust. Required unless `endpoints` is set |
+| `endpoints` | Weighted application base URLs. Required unless `host` is set |
 | `pattern` | Workload pattern |
 
 Useful optional keys:
@@ -177,3 +178,43 @@ Useful optional keys:
 | `stream_locust_output` | `false` | Stream Locust stdout/stderr instead of writing `output/locust/locust.log` |
 | `exit_code_on_error` | `0` | Locust process exit code when requests fail |
 | `locust_args` | `[]` | Extra arguments appended to the Locust command |
+
+## Weighted Endpoints
+
+Use `endpoints` to distribute requests across multiple base URLs. Each entry can
+be a URL string or an object with `url` and `weight`.
+
+```yaml
+endpoints:
+  - url: http://192.168.101.65:30080
+    weight: 1
+  - url: http://192.168.101.66:30080
+    weight: 2
+  - url: http://192.168.101.67:30080
+    weight: 1
+```
+
+For `mixed` patterns, any part can override the global endpoints while that part
+is active:
+
+```yaml
+pattern:
+  type: mixed
+  parts:
+    - type: constant
+      rps: 30
+      duration: 5m
+      endpoints:
+        - url: http://192.168.101.65:30080
+          weight: 1
+    - type: constant
+      rps: 30
+      duration: 5m
+      endpoints:
+        - url: http://192.168.101.66:30080
+          weight: 1
+```
+
+If both `host` and `endpoints` are set, `host` is only used as Locust's nominal
+host; individual relative requests are sent to the weighted endpoint selected
+for the current time step.

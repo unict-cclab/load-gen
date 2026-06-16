@@ -8,7 +8,9 @@ import importlib.util
 import json
 import math
 import os
+import random
 import time
+from urllib.parse import urljoin, urlsplit
 from pathlib import Path
 
 import gevent
@@ -106,6 +108,54 @@ def _rps_at(pattern, t_s):
 
 
 _loadgen_pattern = json.loads(os.environ["LOADGEN_PATTERN_JSON"])
+_loadgen_default_endpoints = json.loads(os.environ["LOADGEN_ENDPOINTS_JSON"])
+
+
+def _normalize_endpoints(endpoints):
+    normalized = []
+    for endpoint in endpoints:
+        if isinstance(endpoint, str):
+            normalized.append({{"url": endpoint.rstrip("/"), "weight": 1.0}})
+            continue
+        normalized.append({{
+            "url": str(endpoint.get("url") or endpoint.get("host")).rstrip("/"),
+            "weight": float(endpoint.get("weight", 1.0)),
+        }})
+    return [endpoint for endpoint in normalized if endpoint["url"] and endpoint["weight"] > 0]
+
+
+def _endpoints_at(pattern, t_s, fallback):
+    endpoints = pattern.get("endpoints")
+    kind = pattern.get("type")
+    if kind == "mixed":
+        cursor = 0.0
+        parts = pattern.get("parts", [])
+        for part in parts:
+            part_duration = _duration(part)
+            if t_s < cursor + part_duration:
+                return _endpoints_at(part, t_s - cursor, endpoints or fallback)
+            cursor += part_duration
+        if parts:
+            return _endpoints_at(parts[-1], _duration(parts[-1]), endpoints or fallback)
+    return _normalize_endpoints(endpoints or fallback)
+
+
+def _choose_endpoint(endpoints):
+    total = sum(float(endpoint["weight"]) for endpoint in endpoints)
+    cursor = random.random() * total
+    for endpoint in endpoints:
+        cursor -= float(endpoint["weight"])
+        if cursor <= 0:
+            return endpoint["url"]
+    return endpoints[-1]["url"]
+
+
+def _request_url_for_current_endpoint(url):
+    if urlsplit(str(url)).scheme:
+        return url
+    run_time = time.monotonic() - _loadgen_started_at
+    endpoint = _choose_endpoint(_endpoints_at(_loadgen_pattern, run_time, _loadgen_default_endpoints))
+    return urljoin(endpoint + "/", str(url).lstrip("/"))
 
 
 def _loadgen_wait_for_request_slot():
@@ -138,11 +188,19 @@ _loadgen_original_fast_http_request = FastHttpSession.request
 
 def _loadgen_http_request(self, *args, **kwargs):
     _loadgen_wait_for_request_slot()
+    if "url" in kwargs:
+        kwargs["url"] = _request_url_for_current_endpoint(kwargs["url"])
+    elif len(args) >= 2:
+        args = (args[0], _request_url_for_current_endpoint(args[1]), *args[2:])
     return _loadgen_original_http_request(self, *args, **kwargs)
 
 
 def _loadgen_fast_http_request(self, *args, **kwargs):
     _loadgen_wait_for_request_slot()
+    if "url" in kwargs:
+        kwargs["url"] = _request_url_for_current_endpoint(kwargs["url"])
+    elif len(args) >= 2:
+        args = (args[0], _request_url_for_current_endpoint(args[1]), *args[2:])
     return _loadgen_original_fast_http_request(self, *args, **kwargs)
 
 

@@ -1,6 +1,15 @@
 name: onlineboutique-mixed
 locustfile: ../../../apps/onlineboutique/locustfile.py
-host: http://192.168.101.63:30677
+host: http://192.168.101.65:30080
+# Optional weighted endpoints. When set, requests are distributed across these
+# URLs by weight. `host` is still accepted as Locust's nominal host.
+#endpoints:
+#  - url: http://192.168.101.65:30080
+#    weight: 1
+#  - url: http://192.168.101.66:30080
+#    weight: 2
+#  - url: http://192.168.101.67:30080
+#    weight: 1
 output_dir: output
 
 # Interval, in seconds, used to sample the ideal workload curve into csv/ideal_rps.csv.
@@ -30,7 +39,28 @@ pattern:
     #  duration: 5m
     - type: constant
       rps: 30
-      duration: 15m
+      duration: 5m
+      # Optional per-step endpoint override. For mixed patterns, this applies
+      # only while this part is active.
+      endpoints:
+        - url: http://192.168.101.65:30080
+          weight: 1
+    - type: constant
+      rps: 30
+      duration: 5m
+      # Optional per-step endpoint override. For mixed patterns, this applies
+      # only while this part is active.
+      endpoints:
+        - url: http://192.168.101.66:30080
+          weight: 1
+    - type: constant
+      rps: 30
+      duration: 5m
+      # Optional per-step endpoint override. For mixed patterns, this applies
+      # only while this part is active.
+      endpoints:
+        - url: http://192.168.101.67:30080
+          weight: 1
     #- type: sinusoidal
     #  baseline_rps: 30
     #  amplitude_rps: 30

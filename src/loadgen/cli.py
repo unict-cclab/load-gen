@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from .patterns import sample_pattern
-from .plots import plot_run, save_line_plot
+from .plots import plot_run, save_ideal_rps_plot
 from .runner import artifact_dirs, experiment_dir, load_config, normalize_locust_history, run_experiment, write_summary
 
 
@@ -40,7 +40,7 @@ def main() -> None:
         preview_plots.mkdir(parents=True, exist_ok=True)
         ideal = sample_pattern(cfg["pattern"], step_s=float(cfg.get("sample_interval_s", 1.0)))
         ideal.to_csv(preview_csv / "ideal_rps.csv", index=False)
-        save_line_plot(ideal, preview_plots / "ideal_rps", "t_min", "ideal_rps", "Ideal RPS")
+        save_ideal_rps_plot(ideal, preview_plots / "ideal_rps")
         print(f"preview written to {dirs.preview}")
         return
 

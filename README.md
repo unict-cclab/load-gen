@@ -121,16 +121,22 @@ Each experiment directory contains:
 | `output/locust/locust_stats_history.csv` | Raw Locust history CSV |
 | `output/locust/locust_stats.csv` | Raw Locust aggregate stats CSV |
 | `output/csv/ideal_rps.csv` | Configured target RPS over experiment minutes |
-| `output/csv/actual_rps.csv` | Delivered RPS from Locust history |
-| `output/csv/failure_rate.csv` | Failures per second from Locust history |
+| `output/csv/actual_rps.csv` | Measured request throughput from Locust history, including failures |
+| `output/csv/failed_rps.csv` | Failed requests per second from Locust history |
+| `output/csv/successful_rps.csv` | Successful requests per second (`actual_rps - failed_rps`) |
 | `output/csv/p95_response_time.csv` | Windowed P95 response time from Locust history |
 | `output/csv/replicas.csv` | Optional deployment replicas sampled with `kubectl` |
-| `output/plots/*.png` | Paper-friendly plots |
+| `output/plots/*.{pdf,png}` | Paper-friendly vector and 300-DPI plots |
 | `output/preview/csv/ideal_rps.csv` | Preview-only ideal workload CSV |
 | `output/preview/plots/ideal_rps.png` | Preview-only ideal workload plot |
 | `output/summary.json` | Mean, max, and last values for the collected metrics |
 
-Plots use minutes on the x axis and a compact academic style suitable for papers. Figures use the same squarer scale as the project reference P95 plot, with lines kept slightly heavier than axes and gridlines so trends remain visible after scaling into a paper column.
+Plots use minutes on the x axis and a one-column academic style suitable for
+systems papers. Every plot is exported as a vector PDF and a 300-DPI PNG at a
+3.5-inch base width. The grid-free, sans-serif style uses 7.5-point axis labels
+and 1.5-point lines, a 4:3 canvas, and approximately five major intervals per
+axis. Multi-series plots combine contrasting colors with line styles and
+markers so they remain readable when printed in grayscale.
 
 ## Kubernetes Replica Sampling
 

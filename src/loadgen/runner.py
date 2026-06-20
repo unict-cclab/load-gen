@@ -15,7 +15,7 @@ import pandas as pd
 from .kube import ReplicaSampler
 from .locustgen import write_wrapper
 from .patterns import format_duration, max_rps, pattern_duration, sample_pattern
-from .plots import plot_run, save_line_plot
+from .plots import plot_run, save_ideal_rps_plot
 
 
 @dataclass(frozen=True)
@@ -79,7 +79,7 @@ def run_experiment(config_path: Path, dry_run: bool = False) -> Path:
     pattern = cfg["pattern"]
     ideal_df = sample_pattern(pattern, step_s=float(cfg.get("sample_interval_s", 1.0)))
     ideal_df.to_csv(dirs.csv / "ideal_rps.csv", index=False)
-    save_line_plot(ideal_df, dirs.plots / "ideal_rps", "t_min", "ideal_rps", "Ideal RPS")
+    save_ideal_rps_plot(ideal_df, dirs.plots / "ideal_rps")
 
     app_locustfile = resolve_path(cfg["locustfile"], config_path.parent)
     wrapper = write_wrapper(app_locustfile, dirs.generated / "locustfile.py")
@@ -111,8 +111,8 @@ def prepare_run_dir(run_dir: Path) -> None:
         "actual_rps.csv",
         "actual_rps.png",
         "app_locustfile.py",
-        "failure_rate.csv",
-        "failure_rate.png",
+        "failed_rps.csv",
+        "failed_rps.png",
         "ideal_rps.csv",
         "ideal_rps.png",
         "locust_exceptions.csv",
@@ -129,6 +129,8 @@ def prepare_run_dir(run_dir: Path) -> None:
         "preview_ideal_rps.png",
         "replicas.csv",
         "replicas_by_service.png",
+        "successful_rps.csv",
+        "successful_rps.png",
         "summary.json",
         "total_replicas.png",
     ]:
@@ -290,17 +292,21 @@ def normalize_locust_history(locust_dir: Path, csv_dir: Path, p95_window_s: floa
     total["t_min"] = total["t_s"] / 60.0
 
     actual_rps_col = first_existing(total, ["Requests/s", "Total RPS", "Current RPS"])
-    failure_col = first_existing(total, ["Failures/s", "Total Failure RPS", "Current Failures/s"])
+    failed_rps_col = first_existing(total, ["Failures/s", "Total Failure RPS", "Current Failures/s"])
     p95_col = first_existing(total, ["95%", "95%ile", "p95"])
 
     if actual_rps_col:
-        total[["t_s", "t_min", actual_rps_col]].rename(columns={actual_rps_col: "actual_rps"}).to_csv(
-            csv_dir / "actual_rps.csv", index=False
-        )
-    if failure_col:
-        total[["t_s", "t_min", failure_col]].rename(columns={failure_col: "failure_rate"}).to_csv(
-            csv_dir / "failure_rate.csv", index=False
-        )
+        rates = total[["t_s", "t_min", actual_rps_col]].rename(columns={actual_rps_col: "actual_rps"})
+        rates["actual_rps"] = pd.to_numeric(rates["actual_rps"], errors="coerce")
+        rates.to_csv(csv_dir / "actual_rps.csv", index=False)
+
+        if failed_rps_col:
+            rates["failed_rps"] = pd.to_numeric(total[failed_rps_col], errors="coerce")
+            rates[["t_s", "t_min", "failed_rps"]].to_csv(csv_dir / "failed_rps.csv", index=False)
+            rates["successful_rps"] = (rates["actual_rps"] - rates["failed_rps"]).clip(lower=0)
+            rates[["t_s", "t_min", "successful_rps"]].to_csv(
+                csv_dir / "successful_rps.csv", index=False
+            )
     if p95_col:
         p95 = total[["t_s", "t_min", p95_col]].copy()
         p95[p95_col] = pd.to_numeric(p95[p95_col], errors="coerce")
@@ -351,7 +357,8 @@ def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None) 
     for metric, filename, column in [
         ("ideal_rps", "ideal_rps.csv", "ideal_rps"),
         ("actual_rps", "actual_rps.csv", "actual_rps"),
-        ("failure_rate", "failure_rate.csv", "failure_rate"),
+        ("failed_rps", "failed_rps.csv", "failed_rps"),
+        ("successful_rps", "successful_rps.csv", "successful_rps"),
     ]:
         path = artifact_file(run_dir, "csv", filename)
         if path.exists():

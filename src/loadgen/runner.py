@@ -381,7 +381,7 @@ def normalize_locust_history(locust_dir: Path, csv_dir: Path, p95_window_s: floa
             p95["window_index"] = (p95["t_s"] // p95_window_s).astype(int)
             p95 = (
                 p95.groupby("window_index", as_index=False)
-                .agg(t_s=("t_s", "max"), t_min=("t_min", "max"), p95_ms=(p95_col, "mean"))
+                .agg(t_s=("t_s", "max"), t_min=("t_min", "max"), p95_ms=(p95_col, "max"))
                 .drop(columns=["window_index"])
             )
             p95["window_s"] = float(p95_window_s)
@@ -468,22 +468,6 @@ def response_time_summary(run_dir: Path, slo_ms: float | None = None, warmup_s: 
                 val = pd.to_numeric(total_stats[p95_col_stats].iloc[0:1], errors="coerce").dropna()
                 if not val.empty:
                     summary["p95_overall"] = float(val.iloc[0])
-
-    history_path = artifact_file(run_dir, "locust", "locust_stats_history.csv")
-    if history_path.exists():
-        history = pd.read_csv(history_path)
-        if not history.empty:
-            total_hist = select_total_history(history)
-            p95_col_hist = first_existing(total_hist, ["95%", "95%ile", "p95"])
-            if p95_col_hist and not total_hist.empty:
-                if warmup_s > 0 and "Timestamp" in total_hist.columns:
-                    t = pd.to_numeric(total_hist["Timestamp"], errors="coerce")
-                    if t.notna().any():
-                        t0 = float(t.dropna().iloc[0])
-                        total_hist = total_hist[(t - t0) >= warmup_s]
-                values_hist = pd.to_numeric(total_hist[p95_col_hist], errors="coerce").dropna()
-                if not values_hist.empty:
-                    summary["p95_experiment"] = float(values_hist.mean())
 
     p95_path = artifact_file(run_dir, "csv", "p95_response_time.csv")
     if p95_path.exists():

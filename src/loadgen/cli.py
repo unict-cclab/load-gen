@@ -65,8 +65,10 @@ def main() -> None:
         csv_dir = dirs.csv
         csv_dir.mkdir(parents=True, exist_ok=True)
         if p95_window_s is not None:
-            normalize_locust_history(locust_dir, csv_dir, p95_window_s=float(p95_window_s))
-            write_summary(run_dir, dry_run=False, locust_exit=None)
+            warmup_s = float(cfg.get("warmup_s", 0.0))
+            slo_ms = args.slo_ms if args.slo_ms is not None else cfg.get("slo_ms")
+            normalize_locust_history(locust_dir, csv_dir, p95_window_s=float(p95_window_s), warmup_s=warmup_s)
+            write_summary(run_dir, dry_run=False, locust_exit=None, slo_ms=slo_ms, warmup_s=warmup_s)
         plot_dir = plot_run(
             run_dir,
             slo_ms=args.slo_ms if args.slo_ms is not None else cfg.get("slo_ms"),

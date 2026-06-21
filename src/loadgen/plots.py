@@ -37,7 +37,7 @@ PAPER_STYLE = {
     "axes.spines.top": True,
     "axes.spines.right": True,
     "axes.linewidth": 0.8,
-    "lines.linewidth": 1.5,
+    "lines.linewidth": 1.0,
     "legend.frameon": True,
     "legend.framealpha": 0.8,
     "legend.handlelength": 2.2,
@@ -127,7 +127,7 @@ def save_line_plot(
         ax.plot(df[x_col], df[y_col], color=PAPER_COLORS[0])
 
     if hline is not None:
-        ax.axhline(hline, color=PAPER_COLORS[1], linestyle="--", linewidth=1.0, label=hline_label)
+        ax.axhline(hline, color=PAPER_COLORS[1], linestyle="--", linewidth=0.8, label=hline_label)
         if hline_label and not series_col:
             ax.legend(loc="best")
 

@@ -323,7 +323,6 @@ def normalize_locust_history(locust_dir: Path, csv_dir: Path, p95_window_s: floa
             p95 = p95.rename(columns={p95_col: "p95_ms"})
         p95.to_csv(csv_dir / "p95_response_time.csv", index=False)
 
-
 def select_total_history(history: pd.DataFrame) -> pd.DataFrame:
     if "Name" not in history.columns:
         return history.copy()

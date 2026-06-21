@@ -457,6 +457,18 @@ def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None, 
 def response_time_summary(run_dir: Path, slo_ms: float | None = None, warmup_s: float = 0.0) -> dict[str, float] | None:
     summary: dict[str, float] = {}
 
+    # True p95 from Locust's final cumulative stats (all requests, no warmup filtering).
+    stats_path = artifact_file(run_dir, "locust", "locust_stats.csv")
+    if stats_path.exists():
+        stats = pd.read_csv(stats_path)
+        if not stats.empty:
+            total_stats = select_total_history(stats)
+            p95_col_stats = first_existing(total_stats, ["95%", "95%ile", "p95"])
+            if p95_col_stats and not total_stats.empty:
+                val = pd.to_numeric(total_stats[p95_col_stats].iloc[0:1], errors="coerce").dropna()
+                if not val.empty:
+                    summary["p95_overall"] = float(val.iloc[0])
+
     history_path = artifact_file(run_dir, "locust", "locust_stats_history.csv")
     if history_path.exists():
         history = pd.read_csv(history_path)
@@ -471,7 +483,7 @@ def response_time_summary(run_dir: Path, slo_ms: float | None = None, warmup_s: 
                         total_hist = total_hist[(t - t0) >= warmup_s]
                 values_hist = pd.to_numeric(total_hist[p95_col_hist], errors="coerce").dropna()
                 if not values_hist.empty:
-                    summary["p95_experiment"] = float(values_hist.iloc[-1])
+                    summary["p95_experiment"] = float(values_hist.mean())
 
     p95_path = artifact_file(run_dir, "csv", "p95_response_time.csv")
     if p95_path.exists():

@@ -92,14 +92,16 @@ def run_experiment(config_path: Path, dry_run: bool = False) -> Path:
         write_summary(run_dir, dry_run=True, slo_ms=slo_ms)
         return run_dir
 
+    warmup_s = float(cfg.get("warmup_s", 0.0))
+
     sampler = maybe_start_sampler(cfg, dirs.csv, config_path.parent)
-    locust_exit = run_locust(cfg, wrapper, dirs.locust)
+    locust_exit = run_locust(cfg, wrapper, dirs.locust, warmup_s=warmup_s)
     if sampler:
         sampler.stop()
 
-    normalize_locust_history(dirs.locust, dirs.csv, p95_window_s=float(cfg.get("p95_window_s", 30.0)))
+    normalize_locust_history(dirs.locust, dirs.csv, p95_window_s=float(cfg.get("p95_window_s", 30.0)), warmup_s=warmup_s)
     plot_run(run_dir, slo_ms=slo_ms)
-    write_summary(run_dir, dry_run=False, locust_exit=locust_exit, slo_ms=slo_ms)
+    write_summary(run_dir, dry_run=False, locust_exit=locust_exit, slo_ms=slo_ms, warmup_s=warmup_s)
 
     if locust_exit != 0:
         raise RuntimeError(f"locust exited with status {locust_exit}; artifacts are in {run_dir}")
@@ -223,14 +225,14 @@ def maybe_start_sampler(cfg: dict[str, Any], csv_dir: Path, config_dir: Path) ->
     return sampler
 
 
-def run_locust(cfg: dict[str, Any], wrapper: Path, locust_dir: Path) -> int:
+def run_locust(cfg: dict[str, Any], wrapper: Path, locust_dir: Path, warmup_s: float = 0.0) -> int:
     pattern = cfg["pattern"]
     endpoint_config = cfg["endpoints"] if "endpoints" in cfg else [cfg["host"]]
     endpoints = normalize_endpoints(endpoint_config, "endpoints")
     locust_host = cfg.get("host") or endpoints[0]["url"]
     max_users = max(1, int(math.ceil(float(cfg.get("max_users", max_rps(pattern))))))
     spawn_rate = float(cfg.get("spawn_rate", min(max_users, 100)))
-    run_time = format_duration(pattern_duration(pattern))
+    run_time = format_duration(pattern_duration(pattern) + warmup_s)
     csv_prefix = locust_dir / "locust"
 
     cmd = [
@@ -271,7 +273,7 @@ def run_locust(cfg: dict[str, Any], wrapper: Path, locust_dir: Path) -> int:
     return proc.returncode
 
 
-def normalize_locust_history(locust_dir: Path, csv_dir: Path, p95_window_s: float = 30.0) -> None:
+def normalize_locust_history(locust_dir: Path, csv_dir: Path, p95_window_s: float = 30.0, warmup_s: float = 0.0) -> None:
     history_path = locust_dir / "locust_stats_history.csv"
     if not history_path.exists():
         print(f"[load-gen] missing Locust history CSV: {history_path}", file=sys.stderr)
@@ -292,6 +294,14 @@ def normalize_locust_history(locust_dir: Path, csv_dir: Path, p95_window_s: floa
     else:
         print("WARNING: Locust Timestamp column missing or malformed; falling back to row-index time", flush=True)
         total["t_s"] = range(len(total))
+
+    if warmup_s > 0:
+        total = total[total["t_s"] >= warmup_s].copy()
+        if total.empty:
+            print(f"[load-gen] WARNING: warmup_s={warmup_s} exceeds run duration; no measurements remain", flush=True)
+            return
+        total["t_s"] = total["t_s"] - warmup_s
+
     total["t_min"] = total["t_s"] / 60.0
 
     actual_rps_col = first_existing(total, ["Requests/s", "Total RPS", "Current RPS"])
@@ -344,7 +354,7 @@ def first_existing(df: pd.DataFrame, names: list[str]) -> str | None:
     return None
 
 
-def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None, slo_ms: float | None = None) -> None:
+def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None, slo_ms: float | None = None, warmup_s: float = 0.0) -> None:
     csv_dir = existing_artifact_dir(run_dir, "csv")
     locust_dir = existing_artifact_dir(run_dir, "locust")
     summary: dict[str, Any] = {
@@ -372,7 +382,7 @@ def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None, 
                     "last": float(df[column].iloc[-1]),
                 }
 
-    response_time = response_time_summary(run_dir, slo_ms=slo_ms)
+    response_time = response_time_summary(run_dir, slo_ms=slo_ms, warmup_s=warmup_s)
     if response_time:
         summary["response_time_ms"] = response_time
 
@@ -391,18 +401,19 @@ def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None, 
     print(json.dumps(summary, indent=2))
 
 
-def response_time_summary(run_dir: Path, slo_ms: float | None = None) -> dict[str, float] | None:
+def response_time_summary(run_dir: Path, slo_ms: float | None = None, warmup_s: float = 0.0) -> dict[str, float] | None:
     summary: dict[str, float] = {}
 
-    stats_path = artifact_file(run_dir, "locust", "locust_stats.csv")
-    if stats_path.exists():
-        stats = pd.read_csv(stats_path)
-        total = select_total_history(stats)
-        p95_col = first_existing(total, ["95%", "95%ile", "p95"])
-        if p95_col and not total.empty:
-            values = pd.to_numeric(total[p95_col], errors="coerce").dropna()
-            if not values.empty:
-                summary["p95_overall"] = float(values.iloc[-1])
+    if warmup_s <= 0:
+        stats_path = artifact_file(run_dir, "locust", "locust_stats.csv")
+        if stats_path.exists():
+            stats = pd.read_csv(stats_path)
+            total = select_total_history(stats)
+            p95_col = first_existing(total, ["95%", "95%ile", "p95"])
+            if p95_col and not total.empty:
+                values = pd.to_numeric(total[p95_col], errors="coerce").dropna()
+                if not values.empty:
+                    summary["p95_overall"] = float(values.iloc[-1])
 
     p95_path = artifact_file(run_dir, "csv", "p95_response_time.csv")
     if p95_path.exists():

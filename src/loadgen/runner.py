@@ -14,7 +14,7 @@ import pandas as pd
 
 from .kube import ReplicaSampler
 from .locustgen import write_wrapper
-from .patterns import format_duration, max_rps, pattern_duration, sample_pattern
+from .patterns import format_duration, max_rps, parse_duration, pattern_duration, sample_pattern
 from .plots import plot_run, save_ideal_rps_plot
 from .progress import LiveProgress
 
@@ -172,6 +172,17 @@ def validate_config(cfg: dict[str, Any]) -> None:
         normalize_endpoints(cfg["endpoints"], "endpoints")
     validate_pattern_endpoints(cfg["pattern"])
     pattern_duration(cfg["pattern"])
+    distribution = cfg.get("zone_distribution")
+    if distribution is not None:
+        endpoints = normalize_endpoints(cfg.get("endpoints", []), "endpoints")
+        if any(not endpoint.get("zone") for endpoint in endpoints):
+            raise ValueError("every endpoint must define zone when zone_distribution is set")
+        if pattern_has_endpoints(cfg["pattern"]):
+            raise ValueError("pattern endpoint overrides cannot be combined with zone_distribution")
+        zones = {endpoint.get("zone") for endpoint in endpoints if endpoint.get("zone")}
+        validate_zone_distribution(distribution, zones)
+        if abs(zone_distribution_duration(distribution) - pattern_duration(cfg["pattern"])) > 1e-6:
+            raise ValueError("zone_distribution duration must equal pattern duration")
 
 
 def normalize_endpoints(value: Any, path: str) -> list[dict[str, Any]]:
@@ -192,8 +203,35 @@ def normalize_endpoints(value: Any, path: str) -> list[dict[str, Any]]:
             raise ValueError(f"{item_path}.url is required")
         if weight <= 0:
             raise ValueError(f"{item_path}.weight must be greater than 0")
-        endpoints.append({"url": url.rstrip("/"), "weight": weight})
+        endpoint = {"url": url.rstrip("/"), "weight": weight}
+        if isinstance(item, dict) and item.get("zone"):
+            endpoint["zone"] = str(item["zone"])
+        endpoints.append(endpoint)
     return endpoints
+
+
+def validate_zone_distribution(distribution: dict[str, Any], zones: set[str]) -> None:
+    kind = distribution.get("type")
+    if kind == "mixed":
+        for part in distribution.get("parts", []):
+            validate_zone_distribution(part, zones)
+        return
+    if kind not in {"constant", "linear"}:
+        raise ValueError(f"unsupported zone_distribution type: {kind!r}")
+    primary = distribution.get("primary_zone")
+    if not primary or primary not in zones:
+        raise ValueError(f"zone_distribution primary_zone {primary!r} is not present in endpoints")
+    fields = ["spread"] if kind == "constant" else ["start_spread", "end_spread"]
+    for field in fields:
+        value = float(distribution[field])
+        if value < 0 or value > 1:
+            raise ValueError(f"zone_distribution {field} must be between 0 and 1")
+
+
+def zone_distribution_duration(distribution: dict[str, Any]) -> float:
+    if distribution.get("type") == "mixed":
+        return sum(zone_distribution_duration(part) for part in distribution.get("parts", []))
+    return parse_duration(distribution["duration"])
 
 
 def validate_pattern_endpoints(pattern: dict[str, Any], path: str = "pattern") -> None:
@@ -202,6 +240,12 @@ def validate_pattern_endpoints(pattern: dict[str, Any], path: str = "pattern") -
     if pattern.get("type") == "mixed":
         for index, part in enumerate(pattern.get("parts", [])):
             validate_pattern_endpoints(part, f"{path}.parts[{index}]")
+
+
+def pattern_has_endpoints(pattern: dict[str, Any]) -> bool:
+    if "endpoints" in pattern:
+        return True
+    return pattern.get("type") == "mixed" and any(pattern_has_endpoints(part) for part in pattern.get("parts", []))
 
 
 def resolve_path(value: str | Path, base_dir: Path) -> Path:
@@ -268,6 +312,7 @@ def run_locust(cfg: dict[str, Any], wrapper: Path, locust_dir: Path, warmup_s: f
     env = os.environ.copy()
     env["LOADGEN_PATTERN_JSON"] = json.dumps(pattern)
     env["LOADGEN_ENDPOINTS_JSON"] = json.dumps(endpoints)
+    env["LOADGEN_ZONE_DISTRIBUTION_JSON"] = json.dumps(cfg.get("zone_distribution"))
     env["LOADGEN_SPAWN_RATE"] = str(spawn_rate)
 
     log_path = locust_dir / "locust.log"

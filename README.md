@@ -224,3 +224,28 @@ pattern:
 If both `host` and `endpoints` are set, `host` is only used as Locust's nominal
 host; individual relative requests are sent to the weighted endpoint selected
 for the current time step.
+
+## Zone Distribution
+
+Endpoints may carry a `zone`. An independent `zone_distribution` timeline first
+selects a zone, then selects an endpoint inside that zone. `spread: 0` sends all
+traffic to `primary_zone`; `spread: 1` distributes traffic uniformly by zone.
+
+```yaml
+endpoints:
+  - {url: http://192.168.101.65:30080, zone: zone-a}
+  - {url: http://192.168.101.67:30080, zone: zone-b}
+
+zone_distribution:
+  type: mixed
+  parts:
+    - {type: constant, duration: 5m, primary_zone: zone-a, spread: 0}
+    - type: linear
+      duration: 10m
+      primary_zone: zone-a
+      start_spread: 0
+      end_spread: 1
+```
+
+The distribution duration must equal the workload pattern duration. This keeps
+request-rate and geographic-distribution evolution independent but aligned.

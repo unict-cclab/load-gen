@@ -1,15 +1,17 @@
 name: onlineboutique-mixed
 locustfile: ../../../apps/onlineboutique/locustfile.py
 host: http://192.168.101.65:30080
-# Optional weighted endpoints. When set, requests are distributed across these
-# URLs by weight. `host` is still accepted as Locust's nominal host.
-#endpoints:
-#  - url: http://192.168.101.65:30080
-#    weight: 1
-#  - url: http://192.168.101.66:30080
-#    weight: 2
-#  - url: http://192.168.101.67:30080
-#    weight: 1
+# Zone-tagged endpoints. Zone distribution is calculated before selecting an
+# endpoint, so each zone receives its configured share regardless of node count.
+endpoints:
+  - url: http://192.168.101.65:30080
+    zone: zone-a
+  - url: http://192.168.101.66:30080
+    zone: zone-a
+  - url: http://192.168.101.67:30080
+    zone: zone-b
+  - url: http://192.168.101.68:30080
+    zone: zone-b
 output_dir: output
 
 # Interval, in seconds, used to sample the ideal workload curve into csv/ideal_rps.csv.
@@ -40,27 +42,12 @@ pattern:
     - type: constant
       rps: 30
       duration: 5m
-      # Optional per-step endpoint override. For mixed patterns, this applies
-      # only while this part is active.
-      endpoints:
-        - url: http://192.168.101.65:30080
-          weight: 1
     - type: constant
       rps: 30
       duration: 5m
-      # Optional per-step endpoint override. For mixed patterns, this applies
-      # only while this part is active.
-      endpoints:
-        - url: http://192.168.101.66:30080
-          weight: 1
     - type: constant
       rps: 30
       duration: 5m
-      # Optional per-step endpoint override. For mixed patterns, this applies
-      # only while this part is active.
-      endpoints:
-        - url: http://192.168.101.67:30080
-          weight: 1
     #- type: sinusoidal
     #  baseline_rps: 30
     #  amplitude_rps: 30
@@ -71,6 +58,29 @@ pattern:
     #  end_rps: 100
     #  curve: 3.0
     #  duration: 2m
+
+# Geographic traffic evolution, independent from the RPS pattern above. The
+# total duration must match the workload pattern duration.
+zone_distribution:
+  type: mixed
+  parts:
+    # Start with all requests entering through zone-a.
+    - type: constant
+      duration: 5m
+      primary_zone: zone-a
+      spread: 0
+    # Gradually move from the zone-a hotspot to a uniform distribution.
+    - type: linear
+      duration: 5m
+      primary_zone: zone-a
+      start_spread: 0
+      end_spread: 1
+    # Finish with 90% in zone-b and 10% in zone-a.
+    - type: constant
+      duration: 5m
+      primary_zone: zone-b
+      spread: 0.2
+
 kubernetes:
   enabled: true
   namespace: default

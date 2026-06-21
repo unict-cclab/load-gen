@@ -109,6 +109,7 @@ def _rps_at(pattern, t_s):
 
 _loadgen_pattern = json.loads(os.environ["LOADGEN_PATTERN_JSON"])
 _loadgen_default_endpoints = json.loads(os.environ["LOADGEN_ENDPOINTS_JSON"])
+_loadgen_zone_distribution = json.loads(os.environ.get("LOADGEN_ZONE_DISTRIBUTION_JSON", "null"))
 
 
 def _normalize_endpoints(endpoints):
@@ -120,6 +121,7 @@ def _normalize_endpoints(endpoints):
         normalized.append({{
             "url": str(endpoint.get("url") or endpoint.get("host")).rstrip("/"),
             "weight": float(endpoint.get("weight", 1.0)),
+            "zone": endpoint.get("zone"),
         }})
     return [endpoint for endpoint in normalized if endpoint["url"] and endpoint["weight"] > 0]
 
@@ -150,11 +152,61 @@ def _choose_endpoint(endpoints):
     return endpoints[-1]["url"]
 
 
+def _distribution_at(distribution, t_s):
+    if distribution.get("type") != "mixed":
+        return distribution, t_s
+    cursor = 0.0
+    parts = distribution.get("parts", [])
+    for part in parts:
+        duration = _distribution_duration(part)
+        if t_s < cursor + duration:
+            return part, t_s - cursor
+        cursor += duration
+    return (parts[-1], _distribution_duration(parts[-1])) if parts else (None, 0.0)
+
+
+def _distribution_duration(distribution):
+    if distribution.get("type") == "mixed":
+        return sum(_distribution_duration(part) for part in distribution.get("parts", []))
+    return _parse_duration(distribution["duration"])
+
+
+def _spread_at(distribution, t_s):
+    if distribution.get("type") == "constant":
+        return float(distribution["spread"])
+    duration = max(_distribution_duration(distribution), 1.0)
+    progress = min(max(t_s / duration, 0.0), 1.0)
+    start = float(distribution["start_spread"])
+    end = float(distribution["end_spread"])
+    return start + (end - start) * progress
+
+
+def _choose_distributed_endpoint(endpoints, distribution, t_s):
+    active, local_t = _distribution_at(distribution, t_s)
+    if not active:
+        return _choose_endpoint(endpoints)
+    by_zone = {{}}
+    for endpoint in endpoints:
+        by_zone.setdefault(endpoint.get("zone"), []).append(endpoint)
+    zones = sorted(zone for zone in by_zone if zone)
+    primary = active["primary_zone"]
+    spread = _spread_at(active, local_t)
+    zone_endpoints = []
+    for zone in zones:
+        share = (1.0 - spread + spread / len(zones)) if zone == primary else spread / len(zones)
+        if share > 0:
+            zone_endpoints.append({{"url": zone, "weight": share}})
+    selected_zone = _choose_endpoint(zone_endpoints)
+    return _choose_endpoint(by_zone[selected_zone])
+
+
 def _request_url_for_current_endpoint(url):
     if urlsplit(str(url)).scheme:
         return url
     run_time = time.monotonic() - _loadgen_started_at
-    endpoint = _choose_endpoint(_endpoints_at(_loadgen_pattern, run_time, _loadgen_default_endpoints))
+    endpoints = _endpoints_at(_loadgen_pattern, run_time, _loadgen_default_endpoints)
+    endpoint = (_choose_distributed_endpoint(endpoints, _loadgen_zone_distribution, run_time)
+                if _loadgen_zone_distribution else _choose_endpoint(endpoints))
     return urljoin(endpoint + "/", str(url).lstrip("/"))
 
 

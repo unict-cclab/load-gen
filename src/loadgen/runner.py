@@ -85,9 +85,11 @@ def run_experiment(config_path: Path, dry_run: bool = False) -> Path:
     wrapper = write_wrapper(app_locustfile, dirs.generated / "locustfile.py")
     shutil.copy2(app_locustfile, dirs.generated / "app_locustfile.py")
 
+    slo_ms = cfg.get("slo_ms")
+
     if dry_run:
-        plot_run(run_dir, slo_ms=cfg.get("slo_ms"))
-        write_summary(run_dir, dry_run=True)
+        plot_run(run_dir, slo_ms=slo_ms)
+        write_summary(run_dir, dry_run=True, slo_ms=slo_ms)
         return run_dir
 
     sampler = maybe_start_sampler(cfg, dirs.csv, config_path.parent)
@@ -96,8 +98,8 @@ def run_experiment(config_path: Path, dry_run: bool = False) -> Path:
         sampler.stop()
 
     normalize_locust_history(dirs.locust, dirs.csv, p95_window_s=float(cfg.get("p95_window_s", 30.0)))
-    plot_run(run_dir, slo_ms=cfg.get("slo_ms"))
-    write_summary(run_dir, dry_run=False, locust_exit=locust_exit)
+    plot_run(run_dir, slo_ms=slo_ms)
+    write_summary(run_dir, dry_run=False, locust_exit=locust_exit, slo_ms=slo_ms)
 
     if locust_exit != 0:
         raise RuntimeError(f"locust exited with status {locust_exit}; artifacts are in {run_dir}")
@@ -288,6 +290,7 @@ def normalize_locust_history(locust_dir: Path, csv_dir: Path, p95_window_s: floa
         start = t0.dropna().iloc[0]
         total["t_s"] = (t0 - start).dt.total_seconds()
     else:
+        print("WARNING: Locust Timestamp column missing or malformed; falling back to row-index time", flush=True)
         total["t_s"] = range(len(total))
     total["t_min"] = total["t_s"] / 60.0
 
@@ -315,7 +318,7 @@ def normalize_locust_history(locust_dir: Path, csv_dir: Path, p95_window_s: floa
             p95["window_index"] = (p95["t_s"] // p95_window_s).astype(int)
             p95 = (
                 p95.groupby("window_index", as_index=False)
-                .agg(t_s=("t_s", "max"), t_min=("t_min", "max"), p95_ms=(p95_col, "max"))
+                .agg(t_s=("t_s", "max"), t_min=("t_min", "max"), p95_ms=(p95_col, "mean"))
                 .drop(columns=["window_index"])
             )
             p95["window_s"] = float(p95_window_s)
@@ -341,7 +344,7 @@ def first_existing(df: pd.DataFrame, names: list[str]) -> str | None:
     return None
 
 
-def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None) -> None:
+def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None, slo_ms: float | None = None) -> None:
     csv_dir = existing_artifact_dir(run_dir, "csv")
     locust_dir = existing_artifact_dir(run_dir, "locust")
     summary: dict[str, Any] = {
@@ -369,7 +372,7 @@ def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None) 
                     "last": float(df[column].iloc[-1]),
                 }
 
-    response_time = response_time_summary(run_dir)
+    response_time = response_time_summary(run_dir, slo_ms=slo_ms)
     if response_time:
         summary["response_time_ms"] = response_time
 
@@ -388,7 +391,7 @@ def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None) 
     print(json.dumps(summary, indent=2))
 
 
-def response_time_summary(run_dir: Path) -> dict[str, float] | None:
+def response_time_summary(run_dir: Path, slo_ms: float | None = None) -> dict[str, float] | None:
     summary: dict[str, float] = {}
 
     stats_path = artifact_file(run_dir, "locust", "locust_stats.csv")
@@ -414,5 +417,13 @@ def response_time_summary(run_dir: Path) -> dict[str, float] | None:
                 summary["p95_window_mean"] = float(values.mean())
                 summary["p95_window_max"] = float(values.max())
                 summary["p95_window_last"] = float(values.iloc[-1])
+                if slo_ms is not None:
+                    violations = int((values > slo_ms).sum())
+                    total_windows = len(values)
+                    summary["slo_ms"] = float(slo_ms)
+                    summary["slo_violation_windows"] = violations
+                    summary["slo_compliance_pct"] = round(
+                        100.0 * (total_windows - violations) / total_windows, 2
+                    )
 
     return summary or None

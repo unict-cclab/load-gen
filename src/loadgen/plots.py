@@ -128,7 +128,7 @@ def save_line_plot(
 
     if hline is not None:
         ax.axhline(hline, color=PAPER_COLORS[1], linestyle="--", linewidth=0.8, label=hline_label)
-        if hline_label and not series_col:
+        if hline_label:
             ax.legend(loc="best")
 
     ax.set_xlabel("Time (min)")
@@ -153,6 +153,11 @@ def save_ideal_rps_plot(df: pd.DataFrame, output_base: Path) -> None:
 
 
 def p95_response_time_label(df: pd.DataFrame) -> str:
+    if "window_s" in df.columns:
+        window_values = pd.to_numeric(df["window_s"], errors="coerce").dropna()
+        if not window_values.empty:
+            w = int(window_values.iloc[0])
+            return f"P95 response time — {w}s window mean (ms)"
     return "P95 response time (ms)"
 
 

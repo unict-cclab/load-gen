@@ -9,6 +9,7 @@ dependencies = [
   "matplotlib>=3.7",
   "pandas>=2.0",
   "PyYAML>=6.0",
+  "rich>=13.0",
 ]
 
 [project.scripts]

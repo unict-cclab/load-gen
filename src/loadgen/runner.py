@@ -16,6 +16,7 @@ from .kube import ReplicaSampler
 from .locustgen import write_wrapper
 from .patterns import format_duration, max_rps, pattern_duration, sample_pattern
 from .plots import plot_run, save_ideal_rps_plot
+from .progress import LiveProgress
 
 
 @dataclass(frozen=True)
@@ -93,9 +94,16 @@ def run_experiment(config_path: Path, dry_run: bool = False) -> Path:
         return run_dir
 
     warmup_s = float(cfg.get("warmup_s", 0.0))
+    total_s = pattern_duration(pattern) + warmup_s
 
     sampler = maybe_start_sampler(cfg, dirs.csv, config_path.parent)
-    locust_exit = run_locust(cfg, wrapper, dirs.locust, warmup_s=warmup_s)
+    with LiveProgress(
+        total_s=total_s,
+        warmup_s=warmup_s,
+        stats_path=dirs.locust / "locust_stats_history.csv",
+        name=cfg.get("name") or "experiment",
+    ):
+        locust_exit = run_locust(cfg, wrapper, dirs.locust, warmup_s=warmup_s)
     if sampler:
         sampler.stop()
 

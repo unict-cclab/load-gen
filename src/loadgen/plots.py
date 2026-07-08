@@ -157,7 +157,7 @@ def p95_response_time_label(df: pd.DataFrame) -> str:
         window_values = pd.to_numeric(df["window_s"], errors="coerce").dropna()
         if not window_values.empty:
             w = int(window_values.iloc[0])
-            return f"P95 response time — {w}s window mean (ms)"
+            return f"P95 response time — {w}s window max (ms)"
     return "P95 response time (ms)"
 
 

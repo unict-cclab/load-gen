@@ -50,7 +50,7 @@ Regenerate plots from normalized experiment CSVs:
 load-gen plot-csv -c examples/onlineboutique-mixed/config.yaml
 ```
 
-Recompute windowed p95 from Locust history before plotting. The window is read from `p95_window_s` in the config:
+Recompute windowed p95 from Locust history before plotting. The window is read from `p95_window_s` in the config, or defaults to 30 seconds:
 
 ```bash
 load-gen plot-csv -c examples/onlineboutique-mixed/config.yaml
@@ -178,7 +178,7 @@ Useful optional keys:
 | `output_dir` | `outputs` | Output root, relative to the config file. Use `output` when the config lives in the experiment directory |
 | `sample_interval_s` | `1` | Ideal workload CSV sample interval |
 | `slo_ms` | unset | Draws an SLO line on the P95 plot |
-| `p95_window_s` | `30` | Window duration for `p95_response_time.csv` and summary windowed p95 |
+| `p95_window_s` | `30` | Window duration for `p95_response_time.csv`; each output point keeps the maximum Locust current p95 observed inside the window |
 | `max_users` | peak RPS | Maximum Locust users available to drive the request-rate throttle |
 | `spawn_rate` | `min(max_users, 100)` | Locust user ramp-up rate |
 | `stream_locust_output` | `false` | Stream Locust stdout/stderr instead of writing `output/locust/locust.log` |

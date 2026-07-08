@@ -379,6 +379,8 @@ def normalize_locust_history(locust_dir: Path, csv_dir: Path, p95_window_s: floa
         p95 = p95.dropna(subset=[p95_col])
         if p95_window_s > 0 and not p95.empty:
             p95["window_index"] = (p95["t_s"] // p95_window_s).astype(int)
+            # Locust history percentiles are already current sliding-window values.
+            # Keep the worst observed p95 in each configured reporting window.
             p95 = (
                 p95.groupby("window_index", as_index=False)
                 .agg(t_s=("t_s", "max"), t_min=("t_min", "max"), p95_ms=(p95_col, "max"))

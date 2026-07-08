@@ -59,16 +59,15 @@ def main() -> None:
     if args.command == "plot-csv":
         cfg = load_config(args.config)
         run_dir = resolve_run_dir(args.config, cfg)
-        p95_window_s = cfg.get("p95_window_s")
+        p95_window_s = float(cfg.get("p95_window_s", 30.0))
         dirs = artifact_dirs(run_dir)
         locust_dir = dirs.locust if dirs.locust.exists() else run_dir
         csv_dir = dirs.csv
         csv_dir.mkdir(parents=True, exist_ok=True)
-        if p95_window_s is not None:
-            warmup_s = float(cfg.get("warmup_s", 0.0))
-            slo_ms = args.slo_ms if args.slo_ms is not None else cfg.get("slo_ms")
-            normalize_locust_history(locust_dir, csv_dir, p95_window_s=float(p95_window_s), warmup_s=warmup_s)
-            write_summary(run_dir, dry_run=False, locust_exit=None, slo_ms=slo_ms, warmup_s=warmup_s)
+        warmup_s = float(cfg.get("warmup_s", 0.0))
+        slo_ms = args.slo_ms if args.slo_ms is not None else cfg.get("slo_ms")
+        normalize_locust_history(locust_dir, csv_dir, p95_window_s=p95_window_s, warmup_s=warmup_s)
+        write_summary(run_dir, dry_run=False, locust_exit=None, slo_ms=slo_ms, warmup_s=warmup_s)
         plot_dir = plot_run(
             run_dir,
             slo_ms=args.slo_ms if args.slo_ms is not None else cfg.get("slo_ms"),

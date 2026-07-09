@@ -141,6 +141,7 @@ def prepare_run_dir(run_dir: Path) -> None:
         "preview_ideal_rps.png",
         "replicas.csv",
         "replicas_by_service.png",
+        "scheduling.csv",
         "successful_rps.csv",
         "successful_rps.png",
         "summary.json",
@@ -267,6 +268,7 @@ def maybe_start_sampler(cfg: dict[str, Any], csv_dir: Path, config_dir: Path) ->
     sampler = ReplicaSampler(
         namespace=namespace,
         output_csv=csv_dir / "replicas.csv",
+        scheduling_output_csv=csv_dir / "scheduling.csv",
         interval_s=float(kube_cfg.get("sample_interval_s", 5.0)),
         selector=kube_cfg.get("selector"),
         kubeconfig=str(resolve_path(kube_cfg["kubeconfig"], config_dir))
@@ -452,8 +454,58 @@ def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None, 
                 "last": float(total["replicas"].iloc[-1]),
             }
 
+    scheduling = scheduling_summary(run_dir)
+    if scheduling:
+        summary["scheduling_duration_s"] = scheduling
+
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2))
+
+
+def scheduling_summary(run_dir: Path) -> dict[str, Any] | None:
+    path = artifact_file(run_dir, "csv", "scheduling.csv")
+    if not path.exists():
+        return None
+
+    try:
+        df = pd.read_csv(path)
+    except pd.errors.EmptyDataError:
+        return None
+    if df.empty or "scheduling_duration_s" not in df:
+        return None
+
+    durations = pd.to_numeric(df["scheduling_duration_s"], errors="coerce")
+    values = durations.dropna()
+    if values.empty:
+        return None
+
+    scheduled = df[durations.notna()].copy()
+    summary: dict[str, Any] = {
+        "pods": int(len(values)),
+        "mean": float(values.mean()),
+        "max": float(values.max()),
+        "p50": float(values.quantile(0.50)),
+        "p95": float(values.quantile(0.95)),
+    }
+
+    if "scheduler" in scheduled:
+        by_scheduler: dict[str, dict[str, float | int]] = {}
+        for scheduler, group in scheduled.groupby(scheduled["scheduler"].fillna("")):
+            group_values = pd.to_numeric(group["scheduling_duration_s"], errors="coerce").dropna()
+            if group_values.empty:
+                continue
+            name = str(scheduler) or "unknown"
+            by_scheduler[name] = {
+                "pods": int(len(group_values)),
+                "mean": float(group_values.mean()),
+                "max": float(group_values.max()),
+                "p50": float(group_values.quantile(0.50)),
+                "p95": float(group_values.quantile(0.95)),
+            }
+        if by_scheduler:
+            summary["by_scheduler"] = by_scheduler
+
+    return summary
 
 
 def response_time_summary(run_dir: Path, slo_ms: float | None = None, warmup_s: float = 0.0) -> dict[str, float] | None:

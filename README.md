@@ -126,6 +126,7 @@ Each experiment directory contains:
 | `output/csv/successful_rps.csv` | Successful requests per second (`actual_rps - failed_rps`) |
 | `output/csv/p95_response_time.csv` | Windowed P95 response time from Locust history |
 | `output/csv/replicas.csv` | Optional deployment replicas sampled with `kubectl` |
+| `output/csv/scheduling.csv` | Optional per-pod scheduling duration sampled with `kubectl` |
 | `output/plots/*.{pdf,png}` | Paper-friendly vector and 300-DPI plots |
 | `output/preview/csv/ideal_rps.csv` | Preview-only ideal workload CSV |
 | `output/preview/plots/ideal_rps.png` | Preview-only ideal workload plot |
@@ -138,9 +139,10 @@ and 1.5-point lines, a 4:3 canvas, and approximately five major intervals per
 axis. Multi-series plots combine contrasting colors with line styles and
 markers so they remain readable when printed in grayscale.
 
-## Kubernetes Replica Sampling
+## Kubernetes Sampling
 
-Replica sampling is optional. Enable it when you want per-service and total replica plots:
+Kubernetes sampling is optional. Enable it when you want per-service and total
+replica plots plus pod scheduling duration stats:
 
 ```yaml
 kubernetes:
@@ -155,9 +157,14 @@ The sampler uses:
 
 ```bash
 kubectl get deployments -n <namespace> -o json
+kubectl get pods -n <namespace> -o json
 ```
 
-It writes one row per deployment plus a `__total__` row at each sample.
+It writes one row per deployment plus a `__total__` row at each sample to
+`csv/replicas.csv`. It also writes one row per observed pod to `csv/scheduling.csv`.
+Pod scheduling duration is measured as `PodScheduled.lastTransitionTime -
+metadata.creationTimestamp`. When `selector` is set, the same selector scopes
+both deployment replica sampling and pod scheduling stats.
 
 ## Configuration Reference
 

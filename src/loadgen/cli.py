@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from .patterns import sample_pattern
-from .plots import plot_run, save_ideal_rps_plot
+from .plots import compare_experiments, plot_run, save_ideal_rps_plot
 from .runner import artifact_dirs, experiment_dir, load_config, normalize_locust_history, run_experiment, write_summary
 
 
@@ -27,6 +27,10 @@ def main() -> None:
     plot_csv.add_argument("-c", "--config", required=True, type=Path)
     plot_csv.add_argument("--slo-ms", type=float)
     plot_csv.add_argument("--output-dir", type=Path, help="Override the output plot directory")
+
+    compare = sub.add_parser("compare", help="Compare completed experiment directories")
+    compare.add_argument("--experiment", action="append", required=True, help="LABEL=EXPERIMENT_DIR")
+    compare.add_argument("--output-dir", required=True, type=Path)
 
     args = parser.parse_args()
 
@@ -74,6 +78,19 @@ def main() -> None:
             output_dir=args.output_dir,
         )
         print(f"plots written to {plot_dir}")
+        return
+
+    if args.command == "compare":
+        experiments = []
+        for raw in args.experiment:
+            if "=" not in raw:
+                raise SystemExit(f"expected LABEL=EXPERIMENT_DIR, got: {raw}")
+            label, path = raw.split("=", 1)
+            if not label or not path:
+                raise SystemExit(f"expected LABEL=EXPERIMENT_DIR, got: {raw}")
+            experiments.append((label, Path(path).resolve()))
+        compare_experiments(experiments, args.output_dir.resolve())
+        print(f"comparison written to {args.output_dir.resolve()}")
         return
 
 

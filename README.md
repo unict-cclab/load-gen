@@ -11,6 +11,7 @@ load-gen preview -c config.yaml
 load-gen run -c config.yaml
 load-gen plot -c config.yaml
 load-gen plot-csv -c config.yaml
+load-gen compare --experiment baseline=path/to/experiment --experiment candidate=path/to/experiment --output-dir comparison
 ```
 
 `run` also accepts `--dry-run`. Plot commands accept `--slo-ms`; `plot-csv`
@@ -71,3 +72,6 @@ Results are written below `output_dir/name`:
 - `csv/` — normalized workload, response-time, failure, replica, and scheduling data
 - `plots/` — PDF and PNG plots
 - `summary.json` — run summary
+
+Comparisons include a windowed P95 time-series overlay and an `overall_p95`
+bar chart based on Locust's cumulative whole-run P95.

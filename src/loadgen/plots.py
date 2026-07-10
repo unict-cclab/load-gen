@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import math
 import os
+import json
+import re
 from pathlib import Path
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/loadgen-matplotlib")
@@ -240,3 +242,103 @@ def read_run_csv(csv_dir: Path, run_dir: Path, filename: str) -> pd.DataFrame:
 def compact_service_label(name: str) -> str:
     label = str(name)
     return label.removesuffix("service")
+
+
+COMPARISON_METRICS = {
+    "ideal_rps.csv": ("ideal_rps", CONFIGURED_INPUT_LABEL),
+    "actual_rps.csv": ("actual_rps", REQUEST_THROUGHPUT_LABEL),
+    "failed_rps.csv": ("failed_rps", FAILED_THROUGHPUT_LABEL),
+    "successful_rps.csv": ("successful_rps", SUCCESSFUL_THROUGHPUT_LABEL),
+    "p95_response_time.csv": ("p95_ms", "P95 response time (ms)"),
+}
+
+
+def compare_experiments(experiments: list[tuple[str, Path]], output_dir: Path) -> None:
+    if len(experiments) < 2:
+        raise ValueError("at least two experiments are required")
+    plots_dir = output_dir / "plots"
+    plots_dir.mkdir(parents=True, exist_ok=True)
+    comparison: dict[str, object] = {"experiments": [], "metrics": {}}
+
+    for filename, (value_col, label) in COMPARISON_METRICS.items():
+        frames = []
+        for experiment_label, experiment_dir in experiments:
+            runs = sorted((experiment_dir / "runs").glob("run-*/load-gen/csv"))
+            samples = []
+            for csv_dir in runs:
+                frame = read_csv(csv_dir / filename)
+                if not frame.empty and {"t_min", value_col}.issubset(frame.columns):
+                    samples.append(frame[["t_min", value_col]])
+            if samples:
+                merged = pd.concat(samples, ignore_index=True)
+                averaged = merged.groupby("t_min", as_index=False)[value_col].mean()
+                averaged["experiment"] = experiment_label
+                frames.append(averaged)
+        if frames:
+            combined = pd.concat(frames, ignore_index=True)
+            combined.to_csv(output_dir / filename, index=False)
+            save_line_plot(combined, plots_dir / Path(filename).stem, "t_min", value_col, label, "experiment")
+
+    replica_frames = []
+    for experiment_label, experiment_dir in experiments:
+        samples = []
+        for csv_dir in sorted((experiment_dir / "runs").glob("run-*/load-gen/csv")):
+            frame = read_csv(csv_dir / "replicas.csv")
+            if not frame.empty and {"t_min", "replicas", "service"}.issubset(frame.columns):
+                samples.append(frame[frame["service"] == "__total__"][["t_min", "replicas"]])
+        if samples:
+            averaged = pd.concat(samples, ignore_index=True).groupby("t_min", as_index=False)["replicas"].mean()
+            averaged["experiment"] = experiment_label
+            replica_frames.append(averaged)
+    if replica_frames:
+        replicas = pd.concat(replica_frames, ignore_index=True)
+        replicas.to_csv(output_dir / "total_replicas.csv", index=False)
+        save_line_plot(replicas, plots_dir / "total_replicas", "t_min", "replicas", REPLICA_COUNT_LABEL, "experiment")
+
+    summaries = []
+    for experiment_label, experiment_dir in experiments:
+        summary_path = experiment_dir / "summary.json"
+        if not summary_path.exists():
+            continue
+        document = json.loads(summary_path.read_text(encoding="utf-8"))
+        metrics = document.get("metrics", {})
+        summaries.append({"experiment": experiment_label, "metrics": metrics})
+        comparison["experiments"].append({
+            "name": experiment_label,
+            "path": str(experiment_dir),
+            "successfulRuns": document.get("successfulRuns", 0),
+            "metrics": metrics,
+        })
+    metric_names = sorted({name for item in summaries for name in item["metrics"]})
+    for metric_name in metric_names:
+        rows = [
+            {"experiment": item["experiment"], "value": item["metrics"][metric_name]}
+            for item in summaries if isinstance(item["metrics"].get(metric_name), (int, float))
+        ]
+        if not rows:
+            continue
+        comparison["metrics"][metric_name] = {row["experiment"]: row["value"] for row in rows}
+        save_comparison_bar(pd.DataFrame(rows), plots_dir / ("summary_" + safe_filename(metric_name)), metric_name)
+        if metric_name == "response_time_ms.p95_overall":
+            overall_p95 = pd.DataFrame(rows)
+            overall_p95.to_csv(output_dir / "overall_p95.csv", index=False)
+            save_comparison_bar(overall_p95, plots_dir / "overall_p95", "Overall P95 response time (ms)")
+    (output_dir / "summary.json").write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
+
+
+def save_comparison_bar(df: pd.DataFrame, output_base: Path, y_label: str) -> None:
+    apply_style()
+    fig, ax = plt.subplots()
+    colors = [PAPER_COLORS[index % len(PAPER_COLORS)] for index in range(len(df))]
+    ax.bar(df["experiment"], df["value"], color=colors)
+    ax.set_ylabel(y_label)
+    ax.tick_params(axis="x", rotation=25)
+    set_nice_axis_scale(ax, "y", float(pd.to_numeric(df["value"]).max()))
+    fig.tight_layout(pad=0.5)
+    for suffix in [".pdf", ".png"]:
+        fig.savefig(output_base.with_suffix(suffix))
+    plt.close(fig)
+
+
+def safe_filename(value: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")

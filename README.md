@@ -86,3 +86,6 @@ throughput, failed request rate, windowed P95 response time, and total replica
 count. Summary bars compare failure percentage, whole-experiment P95, mean
 throughput, P95 scheduling time, and mean replica count. Failure percentage is
 computed as `failed / (successful + failed) * 100` from the normalized rates.
+Individual runs and single-experiment aggregates additionally include
+`replicas_by_service` CSV and plot artifacts; these are intentionally omitted
+from suite overlays to keep cross-experiment comparisons readable.

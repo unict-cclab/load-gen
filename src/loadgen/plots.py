@@ -92,6 +92,7 @@ def save_line_plot(
     legend_ncol: int | None = None,
     figsize: tuple[float, float] | None = None,
     integer_y: bool = False,
+    x_right_padding_fraction: float = 0.0,
 ) -> None:
     if df.empty:
         return
@@ -138,6 +139,9 @@ def save_line_plot(
     if hline is not None:
         y_max = max(y_max, hline)
     set_nice_axis_scale(ax, "x", x_max)
+    if x_right_padding_fraction > 0 and x_max > 0:
+        left, right = ax.get_xlim()
+        ax.set_xlim(left, max(right, x_max * (1 + x_right_padding_fraction)))
     set_nice_axis_scale(ax, "y", y_max, integer=integer_y)
     ax.tick_params(width=0.8, length=3.5, pad=2)
     fig.tight_layout(pad=0.5)
@@ -162,6 +166,10 @@ def plot_run(run_dir: Path, slo_ms: float | None = None, output_dir: Path | None
     for legacy_name in ("actual_rps", "successful_rps"):
         for suffix in (".png", ".pdf"):
             (plot_dir / f"{legacy_name}{suffix}").unlink(missing_ok=True)
+    for derived_name in ("replicas_by_service", "total_replicas"):
+        for suffix in (".png", ".pdf"):
+            (plot_dir / f"{derived_name}{suffix}").unlink(missing_ok=True)
+        (csv_dir / f"{derived_name}.csv").unlink(missing_ok=True)
 
     planned = read_run_csv(csv_dir, run_dir, "ideal_rps.csv")
     save_ideal_rps_plot(planned, plot_dir / "ideal_rps")
@@ -189,6 +197,11 @@ def plot_run(run_dir: Path, slo_ms: float | None = None, output_dir: Path | None
         total = replicas[replicas["service"] == "__total__"].copy()
         if not per_service.empty:
             per_service["service_label"] = per_service["service"].map(compact_service_label)
+            per_service[["t_min", "service_label", "replicas"]].to_csv(
+                csv_dir / "replicas_by_service.csv", index=False
+            )
+        if not total.empty:
+            total[["t_min", "replicas"]].to_csv(csv_dir / "total_replicas.csv", index=False)
         save_line_plot(
             per_service,
             plot_dir / "replicas_by_service",
@@ -200,6 +213,7 @@ def plot_run(run_dir: Path, slo_ms: float | None = None, output_dir: Path | None
             legend_ncol=4,
             figsize=(3.5, 2.625),
             integer_y=True,
+            x_right_padding_fraction=0.03,
         )
         save_line_plot(
             total,
@@ -249,6 +263,10 @@ def aggregate_experiment(experiment_dir: Path) -> None:
         for suffix in (".png", ".pdf"):
             (plots_output / f"{legacy_name}{suffix}").unlink(missing_ok=True)
         (csv_output / f"{legacy_name}.csv").unlink(missing_ok=True)
+    for derived_name in ("replicas_by_service", "total_replicas"):
+        for suffix in (".png", ".pdf"):
+            (plots_output / f"{derived_name}{suffix}").unlink(missing_ok=True)
+        (csv_output / f"{derived_name}.csv").unlink(missing_ok=True)
 
     slo_ms = None
     generated_config = experiment_dir / "config" / "load-gen.yaml"
@@ -289,10 +307,16 @@ def aggregate_experiment(experiment_dir: Path) -> None:
         )
 
     replica_samples = []
+    per_service_samples = []
     for run_csv_dir in sorted((experiment_dir / "runs").glob("run-*/load-gen/csv")):
         frame = read_csv(run_csv_dir / "replicas.csv")
         if not frame.empty and {"t_min", "replicas", "service"}.issubset(frame.columns):
             replica_samples.append(frame[frame["service"] == "__total__"][["t_min", "replicas"]])
+            services = frame[~frame["service"].astype(str).str.startswith("__")][
+                ["t_min", "service", "replicas"]
+            ]
+            if not services.empty:
+                per_service_samples.append(services)
     if replica_samples:
         replicas = pd.concat(replica_samples, ignore_index=True).groupby("t_min", as_index=False)["replicas"].mean()
         replicas.to_csv(csv_output / "total_replicas.csv", index=False)
@@ -303,6 +327,29 @@ def aggregate_experiment(experiment_dir: Path) -> None:
             "replicas",
             REPLICA_COUNT_LABEL,
             integer_y=True,
+        )
+    if per_service_samples:
+        per_service = (
+            pd.concat(per_service_samples, ignore_index=True)
+            .groupby(["t_min", "service"], as_index=False)["replicas"]
+            .mean()
+        )
+        per_service["service_label"] = per_service["service"].map(compact_service_label)
+        per_service[["t_min", "service_label", "replicas"]].to_csv(
+            csv_output / "replicas_by_service.csv", index=False
+        )
+        save_line_plot(
+            per_service,
+            plots_output / "replicas_by_service",
+            "t_min",
+            "replicas",
+            REPLICA_COUNT_LABEL,
+            "service_label",
+            legend_outside=True,
+            legend_ncol=4,
+            figsize=(3.5, 2.625),
+            integer_y=True,
+            x_right_padding_fraction=0.03,
         )
 
 
@@ -408,4 +455,3 @@ def save_comparison_bar(df: pd.DataFrame, output_base: Path, y_label: str) -> No
     for suffix in [".pdf", ".png"]:
         fig.savefig(output_base.with_suffix(suffix))
     plt.close(fig)
-

@@ -16,6 +16,13 @@ def test_aggregate_experiment_uses_canonical_single_experiment_plots(tmp_path):
         pd.DataFrame({"t_min": [0, 1], "p95_ms": [100, 200], "window_s": [30, 30]}).to_csv(
             csv_dir / "p95_response_time.csv", index=False
         )
+        pd.DataFrame(
+            {
+                "t_min": [0, 1, 0, 1],
+                "service": ["frontendservice", "frontendservice", "cartservice", "cartservice"],
+                "replicas": [2, 3, 1, 2],
+            }
+        ).to_csv(csv_dir / "replicas.csv", index=False)
 
     config_dir = root / "config"
     config_dir.mkdir()
@@ -27,6 +34,8 @@ def test_aggregate_experiment_uses_canonical_single_experiment_plots(tmp_path):
     assert throughput["throughput_rps"].tolist() == [15.0, 30.0]
     assert (root / "plots" / "throughput_rps.png").exists()
     assert (root / "plots" / "p95_response_time.png").exists()
+    assert (root / "csv" / "replicas_by_service.csv").exists()
+    assert (root / "plots" / "replicas_by_service.png").exists()
 
 
 def test_compare_experiments_averages_runs_and_writes_summary(tmp_path):

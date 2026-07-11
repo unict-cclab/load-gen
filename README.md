@@ -11,11 +11,16 @@ load-gen preview -c config.yaml
 load-gen run -c config.yaml
 load-gen plot -c config.yaml
 load-gen plot-csv -c config.yaml
+load-gen aggregate --experiment-dir path/to/experiment
 load-gen compare --experiment baseline=path/to/experiment --experiment candidate=path/to/experiment --output-dir comparison
 ```
 
 `run` also accepts `--dry-run`. Plot commands accept `--slo-ms`; `plot-csv`
 also accepts `--output-dir`.
+
+`aggregate` averages matching time-series samples across the completed runs of
+one Experiment Executor experiment and writes canonical CSV files and plots to
+its top-level `csv/` and `plots/` directories.
 
 ## Configuration
 

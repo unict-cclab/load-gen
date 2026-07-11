@@ -33,15 +33,14 @@ class ResponseTimeMetricsTest(unittest.TestCase):
             self.assertEqual(p95["p95_ms"].tolist(), [200, 180])
             self.assertEqual(p95["window_s"].tolist(), [2.0, 2.0])
 
-            actual = pd.read_csv(csv_dir / "actual_rps.csv")
-            self.assertEqual(actual["actual_rps"].tolist(), [12.0, 12.0, 13.0, 14.0, 15.0])
-
-            successful = pd.read_csv(csv_dir / "successful_rps.csv")
-            self.assertEqual(successful["successful_rps"].tolist(), [12.0, 11.5, 13.0, 13.0, 15.0])
+            throughput = pd.read_csv(csv_dir / "throughput_rps.csv")
+            self.assertEqual(throughput["throughput_rps"].tolist(), [12.0, 11.5, 13.0, 13.0, 15.0])
+            self.assertFalse((csv_dir / "actual_rps.csv").exists())
+            self.assertFalse((csv_dir / "successful_rps.csv").exists())
 
     def test_p95_label_matches_window_max_aggregation(self) -> None:
         label = p95_response_time_label(pd.DataFrame({"window_s": [5.0]}))
-        self.assertEqual(label, "P95 response time — 5s window max (ms)")
+        self.assertEqual(label, "P95 response time (ms)")
 
 
 def history_row(

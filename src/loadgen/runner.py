@@ -145,6 +145,8 @@ def prepare_run_dir(run_dir: Path) -> None:
         "successful_rps.csv",
         "successful_rps.png",
         "summary.json",
+        "throughput_rps.csv",
+        "throughput_rps.png",
         "total_replicas.png",
     ]:
         path = run_dir / child
@@ -366,15 +368,13 @@ def normalize_locust_history(locust_dir: Path, csv_dir: Path, p95_window_s: floa
     if actual_rps_col:
         rates = total[["t_s", "t_min", actual_rps_col]].rename(columns={actual_rps_col: "actual_rps"})
         rates["actual_rps"] = pd.to_numeric(rates["actual_rps"], errors="coerce")
-        rates.to_csv(csv_dir / "actual_rps.csv", index=False)
-
         if failed_rps_col:
             rates["failed_rps"] = pd.to_numeric(total[failed_rps_col], errors="coerce")
-            rates[["t_s", "t_min", "failed_rps"]].to_csv(csv_dir / "failed_rps.csv", index=False)
-            rates["successful_rps"] = (rates["actual_rps"] - rates["failed_rps"]).clip(lower=0)
-            rates[["t_s", "t_min", "successful_rps"]].to_csv(
-                csv_dir / "successful_rps.csv", index=False
-            )
+        else:
+            rates["failed_rps"] = 0.0
+        rates[["t_s", "t_min", "failed_rps"]].to_csv(csv_dir / "failed_rps.csv", index=False)
+        rates["throughput_rps"] = (rates["actual_rps"] - rates["failed_rps"]).clip(lower=0)
+        rates[["t_s", "t_min", "throughput_rps"]].to_csv(csv_dir / "throughput_rps.csv", index=False)
     if p95_col:
         p95 = total[["t_s", "t_min", p95_col]].copy()
         p95[p95_col] = pd.to_numeric(p95[p95_col], errors="coerce")
@@ -425,9 +425,8 @@ def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None, 
 
     for metric, filename, column in [
         ("ideal_rps", "ideal_rps.csv", "ideal_rps"),
-        ("actual_rps", "actual_rps.csv", "actual_rps"),
+        ("throughput", "throughput_rps.csv", "throughput_rps"),
         ("failed_rps", "failed_rps.csv", "failed_rps"),
-        ("successful_rps", "successful_rps.csv", "successful_rps"),
     ]:
         path = artifact_file(run_dir, "csv", filename)
         if path.exists():

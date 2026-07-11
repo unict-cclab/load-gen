@@ -4,7 +4,7 @@ import argparse
 from pathlib import Path
 
 from .patterns import sample_pattern
-from .plots import compare_experiments, plot_run, save_ideal_rps_plot
+from .plots import aggregate_experiment, compare_experiments, plot_run, save_ideal_rps_plot
 from .runner import artifact_dirs, experiment_dir, load_config, normalize_locust_history, run_experiment, write_summary
 
 
@@ -31,6 +31,9 @@ def main() -> None:
     compare = sub.add_parser("compare", help="Compare completed experiment directories")
     compare.add_argument("--experiment", action="append", required=True, help="LABEL=EXPERIMENT_DIR")
     compare.add_argument("--output-dir", required=True, type=Path)
+
+    aggregate = sub.add_parser("aggregate", help="Aggregate and plot all runs of one experiment")
+    aggregate.add_argument("--experiment-dir", required=True, type=Path)
 
     args = parser.parse_args()
 
@@ -91,6 +94,12 @@ def main() -> None:
             experiments.append((label, Path(path).resolve()))
         compare_experiments(experiments, args.output_dir.resolve())
         print(f"comparison written to {args.output_dir.resolve()}")
+        return
+
+    if args.command == "aggregate":
+        experiment_path = args.experiment_dir.resolve()
+        aggregate_experiment(experiment_path)
+        print(f"aggregate plots written to {experiment_path / 'plots'}")
         return
 
 

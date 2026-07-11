@@ -50,7 +50,6 @@ PAPER_STYLE = {
 CONFIGURED_INPUT_LABEL = "Input rate (req/s)"
 REQUEST_THROUGHPUT_LABEL = "Throughput (req/s)"
 FAILED_THROUGHPUT_LABEL = "Failed requests (req/s)"
-SUCCESSFUL_THROUGHPUT_LABEL = "Successful requests (req/s)"
 REPLICA_COUNT_LABEL = "Replica count"
 
 
@@ -155,35 +154,24 @@ def save_ideal_rps_plot(df: pd.DataFrame, output_base: Path) -> None:
 
 
 def p95_response_time_label(df: pd.DataFrame) -> str:
-    if "window_s" in df.columns:
-        window_values = pd.to_numeric(df["window_s"], errors="coerce").dropna()
-        if not window_values.empty:
-            w = int(window_values.iloc[0])
-            return f"P95 response time — {w}s window max (ms)"
     return "P95 response time (ms)"
 
 
 def plot_run(run_dir: Path, slo_ms: float | None = None, output_dir: Path | None = None) -> Path:
     csv_dir = run_dir / "csv"
     plot_dir = output_dir or (run_dir / "plots")
+    for legacy_name in ("actual_rps", "successful_rps"):
+        for suffix in (".png", ".pdf"):
+            (plot_dir / f"{legacy_name}{suffix}").unlink(missing_ok=True)
 
     planned = read_run_csv(csv_dir, run_dir, "ideal_rps.csv")
     save_ideal_rps_plot(planned, plot_dir / "ideal_rps")
 
-    actual = read_run_csv(csv_dir, run_dir, "actual_rps.csv")
-    save_line_plot(actual, plot_dir / "actual_rps", "t_min", "actual_rps", REQUEST_THROUGHPUT_LABEL)
+    throughput = read_run_csv(csv_dir, run_dir, "throughput_rps.csv")
+    save_line_plot(throughput, plot_dir / "throughput_rps", "t_min", "throughput_rps", REQUEST_THROUGHPUT_LABEL)
 
     failures = read_run_csv(csv_dir, run_dir, "failed_rps.csv")
     save_line_plot(failures, plot_dir / "failed_rps", "t_min", "failed_rps", FAILED_THROUGHPUT_LABEL)
-
-    successful = read_run_csv(csv_dir, run_dir, "successful_rps.csv")
-    save_line_plot(
-        successful,
-        plot_dir / "successful_rps",
-        "t_min",
-        "successful_rps",
-        SUCCESSFUL_THROUGHPUT_LABEL,
-    )
 
     p95 = read_run_csv(csv_dir, run_dir, "p95_response_time.csv")
     save_line_plot(
@@ -244,13 +232,79 @@ def compact_service_label(name: str) -> str:
     return label.removesuffix("service")
 
 
-COMPARISON_METRICS = {
-    "ideal_rps.csv": ("ideal_rps", CONFIGURED_INPUT_LABEL),
-    "actual_rps.csv": ("actual_rps", REQUEST_THROUGHPUT_LABEL),
-    "failed_rps.csv": ("failed_rps", FAILED_THROUGHPUT_LABEL),
-    "successful_rps.csv": ("successful_rps", SUCCESSFUL_THROUGHPUT_LABEL),
-    "p95_response_time.csv": ("p95_ms", "P95 response time (ms)"),
-}
+COMPARISON_METRICS = [
+    ("ideal_rps.csv", "ideal_rps", "ideal_rps", CONFIGURED_INPUT_LABEL),
+    ("throughput_rps.csv", "throughput_rps", "throughput_rps", REQUEST_THROUGHPUT_LABEL),
+    ("failed_rps.csv", "failed_rps", "failed_rps", FAILED_THROUGHPUT_LABEL),
+    ("p95_response_time.csv", "p95_ms", "p95_response_time", "P95 response time (ms)"),
+]
+
+
+def aggregate_experiment(experiment_dir: Path) -> None:
+    """Create canonical Load Gen plots for the mean time series across runs."""
+    csv_output = experiment_dir / "csv"
+    plots_output = experiment_dir / "plots"
+    csv_output.mkdir(parents=True, exist_ok=True)
+    plots_output.mkdir(parents=True, exist_ok=True)
+    for legacy_name in ("actual_rps", "successful_rps"):
+        for suffix in (".png", ".pdf"):
+            (plots_output / f"{legacy_name}{suffix}").unlink(missing_ok=True)
+        (csv_output / f"{legacy_name}.csv").unlink(missing_ok=True)
+
+    slo_ms = None
+    generated_config = experiment_dir / "config" / "load-gen.yaml"
+    if generated_config.exists():
+        import yaml
+
+        config = yaml.safe_load(generated_config.read_text(encoding="utf-8")) or {}
+        slo_ms = config.get("slo_ms")
+
+    for filename, value_col, output_name, label in COMPARISON_METRICS:
+        samples = []
+        for run_csv_dir in sorted((experiment_dir / "runs").glob("run-*/load-gen/csv")):
+            frame = read_csv(run_csv_dir / filename)
+            if frame.empty or not {"t_min", value_col}.issubset(frame.columns):
+                continue
+            columns = ["t_min", value_col]
+            if filename == "p95_response_time.csv" and "window_s" in frame.columns:
+                columns.append("window_s")
+            samples.append(frame[columns])
+        if not samples:
+            continue
+        merged = pd.concat(samples, ignore_index=True)
+        aggregate = merged.groupby("t_min", as_index=False)[value_col].mean()
+        if filename == "p95_response_time.csv" and "window_s" in merged.columns:
+            window_values = pd.to_numeric(merged["window_s"], errors="coerce").dropna()
+            if not window_values.empty:
+                aggregate["window_s"] = window_values.iloc[0]
+                label = p95_response_time_label(aggregate)
+        aggregate.to_csv(csv_output / f"{output_name}.csv", index=False)
+        save_line_plot(
+            aggregate,
+            plots_output / output_name,
+            "t_min",
+            value_col,
+            label,
+            hline=float(slo_ms) if filename == "p95_response_time.csv" and slo_ms is not None else None,
+            hline_label=f"SLO ({float(slo_ms):g} ms)" if filename == "p95_response_time.csv" and slo_ms is not None else None,
+        )
+
+    replica_samples = []
+    for run_csv_dir in sorted((experiment_dir / "runs").glob("run-*/load-gen/csv")):
+        frame = read_csv(run_csv_dir / "replicas.csv")
+        if not frame.empty and {"t_min", "replicas", "service"}.issubset(frame.columns):
+            replica_samples.append(frame[frame["service"] == "__total__"][["t_min", "replicas"]])
+    if replica_samples:
+        replicas = pd.concat(replica_samples, ignore_index=True).groupby("t_min", as_index=False)["replicas"].mean()
+        replicas.to_csv(csv_output / "total_replicas.csv", index=False)
+        save_line_plot(
+            replicas,
+            plots_output / "total_replicas",
+            "t_min",
+            "replicas",
+            REPLICA_COUNT_LABEL,
+            integer_y=True,
+        )
 
 
 def compare_experiments(experiments: list[tuple[str, Path]], output_dir: Path) -> None:
@@ -258,9 +312,16 @@ def compare_experiments(experiments: list[tuple[str, Path]], output_dir: Path) -
         raise ValueError("at least two experiments are required")
     plots_dir = output_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
+    for legacy_name in ("actual_rps", "successful_rps"):
+        for suffix in (".png", ".pdf"):
+            (plots_dir / f"{legacy_name}{suffix}").unlink(missing_ok=True)
+        (output_dir / f"{legacy_name}.csv").unlink(missing_ok=True)
+    for legacy_name in ("summary_response_time_ms_p95_overall", "summary_p95_response_time_mean"):
+        for suffix in (".png", ".pdf"):
+            (plots_dir / f"{legacy_name}{suffix}").unlink(missing_ok=True)
     comparison: dict[str, object] = {"experiments": [], "metrics": {}}
 
-    for filename, (value_col, label) in COMPARISON_METRICS.items():
+    for filename, value_col, output_name, label in COMPARISON_METRICS:
         frames = []
         for experiment_label, experiment_dir in experiments:
             runs = sorted((experiment_dir / "runs").glob("run-*/load-gen/csv"))
@@ -276,8 +337,8 @@ def compare_experiments(experiments: list[tuple[str, Path]], output_dir: Path) -
                 frames.append(averaged)
         if frames:
             combined = pd.concat(frames, ignore_index=True)
-            combined.to_csv(output_dir / filename, index=False)
-            save_line_plot(combined, plots_dir / Path(filename).stem, "t_min", value_col, label, "experiment")
+            combined.to_csv(output_dir / f"{output_name}.csv", index=False)
+            save_line_plot(combined, plots_dir / output_name, "t_min", value_col, label, "experiment")
 
     replica_frames = []
     for experiment_label, experiment_dir in experiments:
@@ -318,11 +379,16 @@ def compare_experiments(experiments: list[tuple[str, Path]], output_dir: Path) -
         if not rows:
             continue
         comparison["metrics"][metric_name] = {row["experiment"]: row["value"] for row in rows}
-        save_comparison_bar(pd.DataFrame(rows), plots_dir / ("summary_" + safe_filename(metric_name)), metric_name)
         if metric_name == "response_time_ms.p95_overall":
             overall_p95 = pd.DataFrame(rows)
             overall_p95.to_csv(output_dir / "overall_p95.csv", index=False)
-            save_comparison_bar(overall_p95, plots_dir / "overall_p95", "Overall P95 response time (ms)")
+            save_comparison_bar(overall_p95, plots_dir / "overall_p95", "P95 response time (ms)")
+            continue
+        save_comparison_bar(
+            pd.DataFrame(rows),
+            plots_dir / ("summary_" + safe_filename(metric_name)),
+            summary_metric_label(metric_name),
+        )
     (output_dir / "summary.json").write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
 
 
@@ -338,6 +404,22 @@ def save_comparison_bar(df: pd.DataFrame, output_base: Path, y_label: str) -> No
     for suffix in [".pdf", ".png"]:
         fig.savefig(output_base.with_suffix(suffix))
     plt.close(fig)
+
+
+def summary_metric_label(metric_name: str) -> str:
+    if metric_name.startswith("throughput."):
+        return REQUEST_THROUGHPUT_LABEL
+    if metric_name.startswith("failed_rps."):
+        return FAILED_THROUGHPUT_LABEL
+    if metric_name.startswith("ideal_rps."):
+        return CONFIGURED_INPUT_LABEL
+    if metric_name.startswith(("replicas.", "total_replicas.")):
+        return REPLICA_COUNT_LABEL
+    if metric_name.startswith(("p95_response_time.", "response_time_ms.")):
+        return "P95 response time (ms)"
+    if metric_name.startswith("scheduling_duration_s."):
+        return "Scheduling duration (s)"
+    return metric_name.replace("_", " ").replace(".", " — ").capitalize()
 
 
 def safe_filename(value: str) -> str:

@@ -5,7 +5,7 @@ from pathlib import Path
 import pandas as pd
 
 from loadgen.plots import p95_response_time_label
-from loadgen.runner import normalize_locust_history
+from loadgen.runner import failure_percentage_summary, normalize_locust_history
 
 
 class ResponseTimeMetricsTest(unittest.TestCase):
@@ -41,6 +41,15 @@ class ResponseTimeMetricsTest(unittest.TestCase):
     def test_p95_label_matches_window_max_aggregation(self) -> None:
         label = p95_response_time_label(pd.DataFrame({"window_s": [5.0]}))
         self.assertEqual(label, "P95 response time (ms)")
+
+    def test_failure_percentage_uses_successful_and_failed_rates(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            csv_dir = root / "csv"
+            csv_dir.mkdir()
+            pd.DataFrame({"throughput_rps": [90, 80]}).to_csv(csv_dir / "throughput_rps.csv", index=False)
+            pd.DataFrame({"failed_rps": [10, 20]}).to_csv(csv_dir / "failed_rps.csv", index=False)
+            self.assertEqual(failure_percentage_summary(root), 15.0)
 
 
 def history_row(

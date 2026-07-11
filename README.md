@@ -80,3 +80,9 @@ Results are written below `output_dir/name`:
 
 Comparisons include a windowed P95 time-series overlay and an `overall_p95`
 bar chart based on Locust's cumulative whole-run P95.
+
+Suite comparisons generate time-series overlays for input rate, successful
+throughput, failed request rate, windowed P95 response time, and total replica
+count. Summary bars compare failure percentage, whole-experiment P95, mean
+throughput, P95 scheduling time, and mean replica count. Failure percentage is
+computed as `failed / (successful + failed) * 100` from the normalized rates.

@@ -2,14 +2,7 @@ import json
 
 import pandas as pd
 
-from loadgen.plots import aggregate_experiment, compare_experiments, summary_metric_label
-
-
-def test_summary_metric_labels_match_original_plot_labels():
-    assert summary_metric_label("throughput.mean") == "Throughput (req/s)"
-    assert summary_metric_label("failed_rps.mean") == "Failed requests (req/s)"
-    assert summary_metric_label("replicas.mean") == "Replica count"
-    assert summary_metric_label("response_time_ms.p95_overall") == "P95 response time (ms)"
+from loadgen.plots import aggregate_experiment, compare_experiments
 
 
 def test_aggregate_experiment_uses_canonical_single_experiment_plots(tmp_path):
@@ -46,11 +39,26 @@ def test_compare_experiments_averages_runs_and_writes_summary(tmp_path):
             pd.DataFrame({"t_min": [0, 1], "throughput_rps": run_values}).to_csv(
                 csv_dir / "throughput_rps.csv", index=False
             )
+            pd.DataFrame({"t_min": [0, 1], "ideal_rps": [80, 80]}).to_csv(
+                csv_dir / "ideal_rps.csv", index=False
+            )
+            pd.DataFrame({"t_min": [0, 1], "failed_rps": [1, 2]}).to_csv(
+                csv_dir / "failed_rps.csv", index=False
+            )
+            pd.DataFrame({"t_min": [0, 1], "p95_ms": [100, 120]}).to_csv(
+                csv_dir / "p95_response_time.csv", index=False
+            )
+            pd.DataFrame(
+                {"t_min": [0, 1], "service": ["__total__", "__total__"], "replicas": [8, 10]}
+            ).to_csv(csv_dir / "replicas.csv", index=False)
         (root / "summary.json").write_text(json.dumps({
             "successfulRuns": 2,
             "metrics": {
                 "throughput.mean": sum(values[0]) / 2,
+                "failure_percentage": 2.5,
                 "response_time_ms.p95_overall": 200 if label == "baseline" else 150,
+                "scheduling_duration_s.p95": 0.8 if label == "baseline" else 0.5,
+                "total_replicas.mean": 9.0,
             },
         }))
         experiments.append((label, root))
@@ -64,6 +72,16 @@ def test_compare_experiments_averages_runs_and_writes_summary(tmp_path):
     summary = json.loads((output / "summary.json").read_text())
     assert len(summary["experiments"]) == 2
     assert (output / "plots" / "throughput_rps.png").exists()
-    assert (output / "plots" / "summary_throughput_mean.png").exists()
-    assert (output / "overall_p95.csv").exists()
-    assert (output / "plots" / "overall_p95.png").exists()
+    expected_plots = {
+        "ideal_rps.png",
+        "throughput_rps.png",
+        "failed_rps.png",
+        "p95_response_time.png",
+        "total_replicas.png",
+        "failure_percentage.png",
+        "overall_p95.png",
+        "mean_throughput.png",
+        "scheduling_p95.png",
+        "mean_replicas.png",
+    }
+    assert {path.name for path in (output / "plots").glob("*.png")} == expected_plots

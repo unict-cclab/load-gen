@@ -438,6 +438,10 @@ def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None, 
                     "last": float(df[column].iloc[-1]),
                 }
 
+    failure_percentage = failure_percentage_summary(run_dir)
+    if failure_percentage is not None:
+        summary["failure_percentage"] = failure_percentage
+
     response_time = response_time_summary(run_dir, slo_ms=slo_ms, warmup_s=warmup_s)
     if response_time:
         summary["response_time_ms"] = response_time
@@ -459,6 +463,23 @@ def write_summary(run_dir: Path, dry_run: bool, locust_exit: int | None = None, 
 
     (run_dir / "summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
     print(json.dumps(summary, indent=2))
+
+
+def failure_percentage_summary(run_dir: Path) -> float | None:
+    throughput_path = artifact_file(run_dir, "csv", "throughput_rps.csv")
+    failures_path = artifact_file(run_dir, "csv", "failed_rps.csv")
+    if not throughput_path.exists() or not failures_path.exists():
+        return None
+    throughput = pd.read_csv(throughput_path)
+    failures = pd.read_csv(failures_path)
+    if "throughput_rps" not in throughput or "failed_rps" not in failures:
+        return None
+    successful = pd.to_numeric(throughput["throughput_rps"], errors="coerce").sum()
+    failed = pd.to_numeric(failures["failed_rps"], errors="coerce").sum()
+    total = successful + failed
+    if total <= 0:
+        return 0.0
+    return float(failed / total * 100.0)
 
 
 def scheduling_summary(run_dir: Path) -> dict[str, Any] | None:

@@ -3,7 +3,6 @@ from __future__ import annotations
 import math
 import os
 import json
-import re
 from pathlib import Path
 
 os.environ.setdefault("MPLCONFIGDIR", "/tmp/loadgen-matplotlib")
@@ -312,13 +311,11 @@ def compare_experiments(experiments: list[tuple[str, Path]], output_dir: Path) -
         raise ValueError("at least two experiments are required")
     plots_dir = output_dir / "plots"
     plots_dir.mkdir(parents=True, exist_ok=True)
-    for legacy_name in ("actual_rps", "successful_rps"):
-        for suffix in (".png", ".pdf"):
-            (plots_dir / f"{legacy_name}{suffix}").unlink(missing_ok=True)
-        (output_dir / f"{legacy_name}.csv").unlink(missing_ok=True)
-    for legacy_name in ("summary_response_time_ms_p95_overall", "summary_p95_response_time_mean"):
-        for suffix in (".png", ".pdf"):
-            (plots_dir / f"{legacy_name}{suffix}").unlink(missing_ok=True)
+    for pattern in ("*.png", "*.pdf"):
+        for path in plots_dir.glob(pattern):
+            path.unlink()
+    for path in output_dir.glob("*.csv"):
+        path.unlink()
     comparison: dict[str, object] = {"experiments": [], "metrics": {}}
 
     for filename, value_col, output_name, label in COMPARISON_METRICS:
@@ -354,7 +351,15 @@ def compare_experiments(experiments: list[tuple[str, Path]], output_dir: Path) -
     if replica_frames:
         replicas = pd.concat(replica_frames, ignore_index=True)
         replicas.to_csv(output_dir / "total_replicas.csv", index=False)
-        save_line_plot(replicas, plots_dir / "total_replicas", "t_min", "replicas", REPLICA_COUNT_LABEL, "experiment")
+        save_line_plot(
+            replicas,
+            plots_dir / "total_replicas",
+            "t_min",
+            "replicas",
+            REPLICA_COUNT_LABEL,
+            "experiment",
+            integer_y=True,
+        )
 
     summaries = []
     for experiment_label, experiment_dir in experiments:
@@ -370,8 +375,14 @@ def compare_experiments(experiments: list[tuple[str, Path]], output_dir: Path) -
             "successfulRuns": document.get("successfulRuns", 0),
             "metrics": metrics,
         })
-    metric_names = sorted({name for item in summaries for name in item["metrics"]})
-    for metric_name in metric_names:
+    summary_comparisons = [
+        ("failure_percentage", "failure_percentage", "Failure percentage (%)"),
+        ("response_time_ms.p95_overall", "overall_p95", "P95 response time (ms)"),
+        ("throughput.mean", "mean_throughput", REQUEST_THROUGHPUT_LABEL),
+        ("scheduling_duration_s.p95", "scheduling_p95", "P95 scheduling time (s)"),
+        ("total_replicas.mean", "mean_replicas", REPLICA_COUNT_LABEL),
+    ]
+    for metric_name, output_name, label in summary_comparisons:
         rows = [
             {"experiment": item["experiment"], "value": item["metrics"][metric_name]}
             for item in summaries if isinstance(item["metrics"].get(metric_name), (int, float))
@@ -379,16 +390,9 @@ def compare_experiments(experiments: list[tuple[str, Path]], output_dir: Path) -
         if not rows:
             continue
         comparison["metrics"][metric_name] = {row["experiment"]: row["value"] for row in rows}
-        if metric_name == "response_time_ms.p95_overall":
-            overall_p95 = pd.DataFrame(rows)
-            overall_p95.to_csv(output_dir / "overall_p95.csv", index=False)
-            save_comparison_bar(overall_p95, plots_dir / "overall_p95", "P95 response time (ms)")
-            continue
-        save_comparison_bar(
-            pd.DataFrame(rows),
-            plots_dir / ("summary_" + safe_filename(metric_name)),
-            summary_metric_label(metric_name),
-        )
+        frame = pd.DataFrame(rows)
+        frame.to_csv(output_dir / f"{output_name}.csv", index=False)
+        save_comparison_bar(frame, plots_dir / output_name, label)
     (output_dir / "summary.json").write_text(json.dumps(comparison, indent=2) + "\n", encoding="utf-8")
 
 
@@ -405,22 +409,3 @@ def save_comparison_bar(df: pd.DataFrame, output_base: Path, y_label: str) -> No
         fig.savefig(output_base.with_suffix(suffix))
     plt.close(fig)
 
-
-def summary_metric_label(metric_name: str) -> str:
-    if metric_name.startswith("throughput."):
-        return REQUEST_THROUGHPUT_LABEL
-    if metric_name.startswith("failed_rps."):
-        return FAILED_THROUGHPUT_LABEL
-    if metric_name.startswith("ideal_rps."):
-        return CONFIGURED_INPUT_LABEL
-    if metric_name.startswith(("replicas.", "total_replicas.")):
-        return REPLICA_COUNT_LABEL
-    if metric_name.startswith(("p95_response_time.", "response_time_ms.")):
-        return "P95 response time (ms)"
-    if metric_name.startswith("scheduling_duration_s."):
-        return "Scheduling duration (s)"
-    return metric_name.replace("_", " ").replace(".", " — ").capitalize()
-
-
-def safe_filename(value: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")

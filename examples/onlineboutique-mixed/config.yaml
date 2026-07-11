@@ -65,21 +65,26 @@ zone_distribution:
   type: mixed
   parts:
     # Start with all requests entering through zone-a.
-    - type: constant
+    - type: constant_weights
       duration: 5m
-      primary_zone: zone-a
-      spread: 0
-    # Gradually move from the zone-a hotspot to a uniform distribution.
-    - type: linear
+      weights:
+        zone-a: 1
+        zone-b: 0
+    # Gradually move traffic directly from zone-a to zone-b.
+    - type: linear_weights
       duration: 5m
-      primary_zone: zone-a
-      start_spread: 0
-      end_spread: 1
+      start_weights:
+        zone-a: 1
+        zone-b: 0
+      end_weights:
+        zone-a: 0
+        zone-b: 1
     # Finish with 90% in zone-b and 10% in zone-a.
-    - type: constant
+    - type: constant_weights
       duration: 5m
-      primary_zone: zone-b
-      spread: 0.2
+      weights:
+        zone-a: 0.1
+        zone-b: 0.9
 
 kubernetes:
   enabled: true

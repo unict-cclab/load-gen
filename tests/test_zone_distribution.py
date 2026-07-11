@@ -35,6 +35,34 @@ class ZoneDistributionTest(unittest.TestCase):
                 {"zone-a", "zone-b"},
             )
 
+    def test_accepts_weighted_transitions(self) -> None:
+        distribution = {
+            "type": "mixed",
+            "parts": [
+                {"type": "constant_weights", "duration": "5m", "weights": {"zone-a": 1, "zone-b": 0}},
+                {
+                    "type": "linear_weights",
+                    "duration": "10m",
+                    "start_weights": {"zone-a": 1, "zone-b": 0},
+                    "end_weights": {"zone-a": 0, "zone-b": 1},
+                },
+            ],
+        }
+        validate_zone_distribution(distribution, {"zone-a", "zone-b", "zone-c"})
+        self.assertEqual(zone_distribution_duration(distribution), 900)
+
+    def test_rejects_invalid_weight_mapping(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unknown zones"):
+            validate_zone_distribution(
+                {"type": "constant_weights", "duration": "1m", "weights": {"zone-z": 1}},
+                {"zone-a", "zone-b"},
+            )
+        with self.assertRaisesRegex(ValueError, "positive total weight"):
+            validate_zone_distribution(
+                {"type": "constant_weights", "duration": "1m", "weights": {"zone-a": 0}},
+                {"zone-a", "zone-b"},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -181,6 +181,27 @@ def _spread_at(distribution, t_s):
     return start + (end - start) * progress
 
 
+def _zone_weights_at(distribution, zones, t_s):
+    kind = distribution.get("type")
+    if kind == "constant_weights":
+        return {{zone: float(distribution["weights"].get(zone, 0.0)) for zone in zones}}
+    if kind == "linear_weights":
+        duration = max(_distribution_duration(distribution), 1.0)
+        progress = min(max(t_s / duration, 0.0), 1.0)
+        start = distribution["start_weights"]
+        end = distribution["end_weights"]
+        return {{
+            zone: float(start.get(zone, 0.0)) + (float(end.get(zone, 0.0)) - float(start.get(zone, 0.0))) * progress
+            for zone in zones
+        }}
+    primary = distribution["primary_zone"]
+    spread = _spread_at(distribution, t_s)
+    return {{
+        zone: (1.0 - spread + spread / len(zones)) if zone == primary else spread / len(zones)
+        for zone in zones
+    }}
+
+
 def _choose_distributed_endpoint(endpoints, distribution, t_s):
     active, local_t = _distribution_at(distribution, t_s)
     if not active:
@@ -189,11 +210,10 @@ def _choose_distributed_endpoint(endpoints, distribution, t_s):
     for endpoint in endpoints:
         by_zone.setdefault(endpoint.get("zone"), []).append(endpoint)
     zones = sorted(zone for zone in by_zone if zone)
-    primary = active["primary_zone"]
-    spread = _spread_at(active, local_t)
+    weights = _zone_weights_at(active, zones, local_t)
     zone_endpoints = []
     for zone in zones:
-        share = (1.0 - spread + spread / len(zones)) if zone == primary else spread / len(zones)
+        share = weights[zone]
         if share > 0:
             zone_endpoints.append({{"url": zone, "weight": share}})
     selected_zone = _choose_endpoint(zone_endpoints)

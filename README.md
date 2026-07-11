@@ -58,6 +58,16 @@ Supported workload pattern types:
 
 Durations accept `h`, `m`, and `s`. Mixed parts may override `endpoints`.
 
+Zone distributions support the original `constant` and `linear` hotspot
+formats, plus explicit zone weights:
+
+- `constant_weights`: fixed `weights` mapping;
+- `linear_weights`: linearly interpolated `start_weights` and `end_weights`.
+
+Weights must be non-negative and have a positive total. Omitted endpoint zones
+receive zero traffic. Weighted transitions can therefore move traffic directly
+between two zones without sending requests through other zones.
+
 ## Kubernetes sampling
 
 | Key | Default | Description |

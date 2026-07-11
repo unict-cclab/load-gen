@@ -219,6 +219,21 @@ def validate_zone_distribution(distribution: dict[str, Any], zones: set[str]) ->
         for part in distribution.get("parts", []):
             validate_zone_distribution(part, zones)
         return
+    if kind in {"constant_weights", "linear_weights"}:
+        fields = ["weights"] if kind == "constant_weights" else ["start_weights", "end_weights"]
+        for field in fields:
+            weights = distribution.get(field)
+            if not isinstance(weights, dict) or not weights:
+                raise ValueError(f"zone_distribution {field} must be a non-empty mapping")
+            unknown = set(weights) - zones
+            if unknown:
+                raise ValueError(f"zone_distribution {field} contains unknown zones: {', '.join(sorted(unknown))}")
+            values = [float(value) for value in weights.values()]
+            if any(value < 0 for value in values):
+                raise ValueError(f"zone_distribution {field} weights must be non-negative")
+            if sum(values) <= 0:
+                raise ValueError(f"zone_distribution {field} must have a positive total weight")
+        return
     if kind not in {"constant", "linear"}:
         raise ValueError(f"unsupported zone_distribution type: {kind!r}")
     primary = distribution.get("primary_zone")
@@ -380,7 +395,13 @@ def normalize_locust_history(locust_dir: Path, csv_dir: Path, p95_window_s: floa
         p95[p95_col] = pd.to_numeric(p95[p95_col], errors="coerce")
         p95 = p95.dropna(subset=[p95_col])
         if p95_window_s > 0 and not p95.empty:
-            p95["window_index"] = (p95["t_s"] // p95_window_s).astype(int)
+            # Reporting windows are right-closed: (0, window],
+            # (window, 2*window], and so on. A sample exactly on a boundary
+            # therefore completes the preceding window instead of creating a
+            # one-sample trailing bucket.
+            p95["window_index"] = p95["t_s"].map(
+                lambda value: max(0, math.ceil(float(value) / p95_window_s) - 1)
+            )
             # Locust history percentiles are already current sliding-window values.
             # Keep the worst observed p95 in each configured reporting window.
             p95 = (

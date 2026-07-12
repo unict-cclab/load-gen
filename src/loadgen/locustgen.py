@@ -171,16 +171,6 @@ def _distribution_duration(distribution):
     return _parse_duration(distribution["duration"])
 
 
-def _spread_at(distribution, t_s):
-    if distribution.get("type") == "constant":
-        return float(distribution["spread"])
-    duration = max(_distribution_duration(distribution), 1.0)
-    progress = min(max(t_s / duration, 0.0), 1.0)
-    start = float(distribution["start_spread"])
-    end = float(distribution["end_spread"])
-    return start + (end - start) * progress
-
-
 def _zone_weights_at(distribution, zones, t_s):
     kind = distribution.get("type")
     if kind == "constant_weights":
@@ -194,12 +184,7 @@ def _zone_weights_at(distribution, zones, t_s):
             zone: float(start.get(zone, 0.0)) + (float(end.get(zone, 0.0)) - float(start.get(zone, 0.0))) * progress
             for zone in zones
         }}
-    primary = distribution["primary_zone"]
-    spread = _spread_at(distribution, t_s)
-    return {{
-        zone: (1.0 - spread + spread / len(zones)) if zone == primary else spread / len(zones)
-        for zone in zones
-    }}
+    raise ValueError(f"unsupported zone_distribution type: {{kind!r}}")
 
 
 def _choose_distributed_endpoint(endpoints, distribution, t_s):

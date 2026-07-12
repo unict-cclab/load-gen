@@ -219,31 +219,21 @@ def validate_zone_distribution(distribution: dict[str, Any], zones: set[str]) ->
         for part in distribution.get("parts", []):
             validate_zone_distribution(part, zones)
         return
-    if kind in {"constant_weights", "linear_weights"}:
-        fields = ["weights"] if kind == "constant_weights" else ["start_weights", "end_weights"]
-        for field in fields:
-            weights = distribution.get(field)
-            if not isinstance(weights, dict) or not weights:
-                raise ValueError(f"zone_distribution {field} must be a non-empty mapping")
-            unknown = set(weights) - zones
-            if unknown:
-                raise ValueError(f"zone_distribution {field} contains unknown zones: {', '.join(sorted(unknown))}")
-            values = [float(value) for value in weights.values()]
-            if any(value < 0 for value in values):
-                raise ValueError(f"zone_distribution {field} weights must be non-negative")
-            if sum(values) <= 0:
-                raise ValueError(f"zone_distribution {field} must have a positive total weight")
-        return
-    if kind not in {"constant", "linear"}:
+    if kind not in {"constant_weights", "linear_weights"}:
         raise ValueError(f"unsupported zone_distribution type: {kind!r}")
-    primary = distribution.get("primary_zone")
-    if not primary or primary not in zones:
-        raise ValueError(f"zone_distribution primary_zone {primary!r} is not present in endpoints")
-    fields = ["spread"] if kind == "constant" else ["start_spread", "end_spread"]
+    fields = ["weights"] if kind == "constant_weights" else ["start_weights", "end_weights"]
     for field in fields:
-        value = float(distribution[field])
-        if value < 0 or value > 1:
-            raise ValueError(f"zone_distribution {field} must be between 0 and 1")
+        weights = distribution.get(field)
+        if not isinstance(weights, dict) or not weights:
+            raise ValueError(f"zone_distribution {field} must be a non-empty mapping")
+        unknown = set(weights) - zones
+        if unknown:
+            raise ValueError(f"zone_distribution {field} contains unknown zones: {', '.join(sorted(unknown))}")
+        values = [float(value) for value in weights.values()]
+        if any(value < 0 for value in values):
+            raise ValueError(f"zone_distribution {field} weights must be non-negative")
+        if sum(values) <= 0:
+            raise ValueError(f"zone_distribution {field} must have a positive total weight")
 
 
 def zone_distribution_duration(distribution: dict[str, Any]) -> float:

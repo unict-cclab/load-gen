@@ -20,16 +20,21 @@ class ZoneDistributionTest(unittest.TestCase):
         distribution = {
             "type": "mixed",
             "parts": [
-                {"type": "constant", "duration": "5m", "primary_zone": "zone-a", "spread": 0},
-                {"type": "linear", "duration": "10m", "primary_zone": "zone-a", "start_spread": 0, "end_spread": 1},
+                {"type": "constant_weights", "duration": "5m", "weights": {"zone-a": 1, "zone-b": 0}},
+                {
+                    "type": "linear_weights",
+                    "duration": "10m",
+                    "start_weights": {"zone-a": 1, "zone-b": 0},
+                    "end_weights": {"zone-a": 0, "zone-b": 1},
+                },
             ],
         }
         validate_zone_distribution(distribution, {endpoint["zone"] for endpoint in endpoints})
         self.assertEqual(zone_distribution_duration(distribution), 900)
         self.assertEqual([endpoint["zone"] for endpoint in endpoints], ["zone-a", "zone-a", "zone-b"])
 
-    def test_rejects_unknown_primary_zone(self) -> None:
-        with self.assertRaisesRegex(ValueError, "is not present"):
+    def test_rejects_legacy_spread_distribution(self) -> None:
+        with self.assertRaisesRegex(ValueError, "unsupported zone_distribution type"):
             validate_zone_distribution(
                 {"type": "constant", "duration": "1m", "primary_zone": "zone-c", "spread": 0.5},
                 {"zone-a", "zone-b"},

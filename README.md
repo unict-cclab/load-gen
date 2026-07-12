@@ -58,8 +58,7 @@ Supported workload pattern types:
 
 Durations accept `h`, `m`, and `s`. Mixed parts may override `endpoints`.
 
-Zone distributions support the original `constant` and `linear` hotspot
-formats, plus explicit zone weights:
+Zone distributions use explicit zone weights:
 
 - `constant_weights`: fixed `weights` mapping;
 - `linear_weights`: linearly interpolated `start_weights` and `end_weights`.

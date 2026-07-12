@@ -66,7 +66,7 @@ def test_compare_experiments_averages_runs_and_writes_summary(tmp_path):
                 "throughput.mean": sum(values[0]) / 2,
                 "failure_percentage": 2.5,
                 "response_time_ms.p95_overall": 200 if label == "baseline" else 150,
-                "scheduling_duration_s.p95": 0.8 if label == "baseline" else 0.5,
+                "scheduling_duration_s.mean": 0.8 if label == "baseline" else 0.5,
                 "total_replicas.mean": 9.0,
             },
         }))
@@ -90,7 +90,7 @@ def test_compare_experiments_averages_runs_and_writes_summary(tmp_path):
         "failure_percentage.png",
         "overall_p95.png",
         "mean_throughput.png",
-        "scheduling_p95.png",
+        "scheduling_mean.png",
         "mean_replicas.png",
     }
     assert {path.name for path in (output / "plots").glob("*.png")} == expected_plots

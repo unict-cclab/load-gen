@@ -426,7 +426,11 @@ def compare_experiments(experiments: list[tuple[str, Path]], output_dir: Path) -
         ("failure_percentage", "failure_percentage", "Failure percentage (%)"),
         ("response_time_ms.p95_overall", "overall_p95", "P95 response time (ms)"),
         ("throughput.mean", "mean_throughput", REQUEST_THROUGHPUT_LABEL),
-        ("scheduling_duration_s.p95", "scheduling_p95", "P95 scheduling time (s)"),
+        (
+            "scheduling_duration_s.mean",
+            "scheduling_mean",
+            "Mean pod creation-to-scheduled time (s)",
+        ),
         ("total_replicas.mean", "mean_replicas", REPLICA_COUNT_LABEL),
     ]
     for metric_name, output_name, label in summary_comparisons:

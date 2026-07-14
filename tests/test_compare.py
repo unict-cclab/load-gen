@@ -66,6 +66,7 @@ def test_compare_experiments_averages_runs_and_writes_summary(tmp_path):
                 "throughput.mean": sum(values[0]) / 2,
                 "failure_percentage": 2.5,
                 "response_time_ms.p95_overall": 200 if label == "baseline" else 150,
+                "response_time_ms.p95_window_mean": 110 if label == "baseline" else 90,
                 "scheduling_duration_s.mean": 0.8 if label == "baseline" else 0.5,
                 "total_replicas.mean": 9.0,
             },
@@ -89,8 +90,18 @@ def test_compare_experiments_averages_runs_and_writes_summary(tmp_path):
         "total_replicas.png",
         "failure_percentage.png",
         "overall_p95.png",
+        "mean_window_p95.png",
         "mean_throughput.png",
         "scheduling_mean.png",
         "mean_replicas.png",
     }
     assert {path.name for path in (output / "plots").glob("*.png")} == expected_plots
+    mean_window_p95 = pd.read_csv(output / "mean_window_p95.csv")
+    assert mean_window_p95.to_dict("records") == [
+        {"experiment": "baseline", "value": 110},
+        {"experiment": "candidate", "value": 90},
+    ]
+    assert summary["metrics"]["response_time_ms.p95_window_mean"] == {
+        "baseline": 110,
+        "candidate": 90,
+    }

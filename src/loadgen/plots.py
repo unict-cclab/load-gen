@@ -425,6 +425,11 @@ def compare_experiments(experiments: list[tuple[str, Path]], output_dir: Path) -
     summary_comparisons = [
         ("failure_percentage", "failure_percentage", "Failure percentage (%)"),
         ("response_time_ms.p95_overall", "overall_p95", "P95 response time (ms)"),
+        (
+            "response_time_ms.p95_window_mean",
+            "mean_window_p95",
+            "Mean window P95 response time (ms)",
+        ),
         ("throughput.mean", "mean_throughput", REQUEST_THROUGHPUT_LABEL),
         (
             "scheduling_duration_s.mean",
